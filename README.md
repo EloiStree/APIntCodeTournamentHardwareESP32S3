@@ -15,3 +15,9 @@ https://github.com/EloiStree/2024_11_31_ReadHardwareToIndexInteger/tree/main/
 I had an idea…
 The ESP32 has the Bluetooth and Wi-Fi I need, and the Arduino Leonardo with XInput support is lacking those features.
 Could I combine them so the ESP32 handles the keyboard and mouse, while the Arduino provides XInput?
+
+
+
+HC05 Tutorial:
+- https://github.com/EloiStree/2024_11_21_ESP32HC05RC/tree/main
+  - https://youtu.be/-XuE9P1T2_k?t=307
