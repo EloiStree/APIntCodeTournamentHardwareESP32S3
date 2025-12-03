@@ -1,83 +1,740 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 
+
+
+
+
+
 #include <BleConnectionStatus.h>
 #include <BleCompositeHID.h>
 #include <XboxGamepadDevice.h>
 
+// Optional: if you use debug prints
+// #include "DebugPrintStatic.h"  // Uncomment if you have this
 
-class IIDUtility{
-    public: 
-        static int32_t byte_to_little_endian_int(byte b0, byte b1, byte b2, byte b3) {
-            return ((int32_t)b0) | ((int32_t)b1 << 8) | ((int32_t)b2 << 16) | ((int32_t)b3 << 24);
-        }
+class GamepadXboxBLE {
+private:
+    XboxSeriesXControllerDeviceConfiguration* gamepadConfig = nullptr;
+    XboxGamepadDevice* gamepad = nullptr;
+    BleCompositeHID compositeHID;
+
+    // Axis and trigger limits (constexpr for compile-time constants)
+    static constexpr int16_t AXIS_MIN = -32767;
+    static constexpr int16_t AXIS_MAX = 32767;
+    static constexpr int16_t AXIS_MAX_PLUS_ONE = 32768;
+    static constexpr int16_t AXIS_NEUTRAL = 0;
+
+    static constexpr uint8_t TRIGGER_MIN = 0;
+    static constexpr uint8_t TRIGGER_MAX = 255;
+    static constexpr uint8_t TRIGGER_MAX_PLUS_ONE = 256;
+
+
+    int16_t m_left_horizontal = 0.0f;
+    int16_t m_left_vertical = 0.0f;
+    int16_t m_right_horizontal = 0.0f;
+    int16_t m_right_vertical = 0.0f;
+    uint8_t m_trigger_left = 0.0f;
+    uint8_t m_trigger_right = 0.0f;
+
+    
+
+    uint16_t C_XBOX_BUTTON_A        = XBOX_BUTTON_A       ;
+    uint16_t C_XBOX_BUTTON_B        = XBOX_BUTTON_B ;
+    uint16_t C_XBOX_BUTTON_X        = XBOX_BUTTON_X ;
+    uint16_t C_XBOX_BUTTON_Y        = XBOX_BUTTON_Y;
+    uint16_t C_XBOX_BUTTON_LB       = XBOX_BUTTON_LB;
+    uint16_t C_XBOX_BUTTON_RB       = XBOX_BUTTON_RB;
+    uint16_t C_XBOX_BUTTON_START    = XBOX_BUTTON_START;
+    uint16_t C_XBOX_BUTTON_SELECT   = XBOX_BUTTON_SELECT;
+    uint16_t C_XBOX_BUTTON_HOME     = XBOX_BUTTON_HOME;
+    uint16_t C_XBOX_BUTTON_LS       = XBOX_BUTTON_LS;
+    uint16_t C_XBOX_BUTTON_RS       = XBOX_BUTTON_RS;
+
+public:
+    // Constructor now takes name/device info for flexibility
+    GamepadXboxBLE(
+        const char* deviceName = "XInput ESP32",
+        const char* manufacturer = "APIntIO",
+        uint8_t batteryLevel = 100
+    ) : compositeHID(deviceName, manufacturer, batteryLevel) {}
+
+    ~GamepadXboxBLE() {
+        if (gamepadConfig) delete gamepadConfig;
+        if (gamepad) delete gamepad;
+    }
+
+    bool begin() {
         
-        static uint64_t bytes_to_little_endian_uint64(byte b0, byte b1, byte b2, byte b3, byte b4, byte b5, byte b6, byte b7) {
-            return ((uint64_t)b0) | ((uint64_t)b1 << 8) | ((uint64_t)b2 << 16) | ((uint64_t)b3 << 24) |
-                   ((uint64_t)b4 << 32) | ((uint64_t)b5 << 40) | ((uint64_t)b6 << 48) | ((uint64_t)b7 << 56);
+        Serial.println("[XboxBLE] Initializing BLE Xbox Gamepad...");
+
+        // Create configuration
+        gamepadConfig = new XboxSeriesXControllerDeviceConfiguration();
+        if (!gamepadConfig) {
+            Serial.println("[ERROR] Failed to allocate gamepad config!");
+            return false;
         }
 
-        static void little_endian_int_to_bytes(int32_t value, uint8_t bytes[4]) {
-            bytes[0] = value & 0xFF;
-            bytes[1] = (value >> 8) & 0xFF;
-            bytes[2] = (value >> 16) & 0xFF;
-            bytes[3] = (value >> 24) & 0xFF;
+        // Get ideal host config (includes VID/PID, etc.)
+        BLEHostConfiguration hostConfig = gamepadConfig->getIdealHostConfiguration();
+
+        Serial.printf("[INFO] VID: 0x%04X  PID: 0x%04X  GUID: 0x%02X  Serial: %s\n",
+                hostConfig.getVid(),
+                hostConfig.getPid(),
+                hostConfig.getGuidVersion(),
+                hostConfig.getSerialNumber());
+
+        // Create the actual gamepad device
+        gamepad = new XboxGamepadDevice(gamepadConfig);
+        if (!gamepad) {
+            Serial.println("[ERROR] Failed to create XboxGamepadDevice!");
+            return false;
         }
 
-        static void little_endian_uint64_to_bytes(uint64_t value, uint8_t bytes[8]) {
-            bytes[0] = value & 0xFF;
-            bytes[1] = (value >> 8) & 0xFF;
-            bytes[2] = (value >> 16) & 0xFF;
-            bytes[3] = (value >> 24) & 0xFF;
-            bytes[4] = (value >> 32) & 0xFF;
-            bytes[5] = (value >> 40) & 0xFF;
-            bytes[6] = (value >> 48) & 0xFF;
-            bytes[7] = (value >> 56) & 0xFF;
+        // Add to composite HID
+        compositeHID.addDevice(gamepad);
+
+        // Start BLE
+        compositeHID.begin(hostConfig);
+
+        // Ensure clean state
+        release_all();
+
+        Serial.println("[XboxBLE] Ready! Waiting for connection...");
+        return true;
+    }
+
+  
+
+
+
+      void press_button_id(uint16_t value){
+              gamepad->press(value);
+              gamepad->sendGamepadReport();
+      }
+
+      void release_button_id(uint16_t value){
+              gamepad->release(value);
+              gamepad->sendGamepadReport();
+      }
+
+      void press_a(bool isPress){if(isPress){press_button_id(C_XBOX_BUTTON_A);}else{release_button_id(C_XBOX_BUTTON_A);} }
+      void press_b(bool isPress){if(isPress){press_button_id(C_XBOX_BUTTON_B);}else{release_button_id(C_XBOX_BUTTON_B);}}
+      void press_x(bool isPress){if(isPress){press_button_id(C_XBOX_BUTTON_X);}else{release_button_id(C_XBOX_BUTTON_X);} }
+      void press_y(bool isPress){if(isPress){press_button_id(C_XBOX_BUTTON_Y);}else{release_button_id(C_XBOX_BUTTON_Y);} }
+      void press_left_side_button(bool isPress){if(isPress){press_button_id(C_XBOX_BUTTON_LB);}else{release_button_id(C_XBOX_BUTTON_LB);}}
+      void press_right_side_button(bool isPress){if(isPress){press_button_id(C_XBOX_BUTTON_RB);}else{release_button_id(C_XBOX_BUTTON_RB);}}
+      void press_left_stick(bool isPress){if(isPress){press_button_id(C_XBOX_BUTTON_LS);}else{release_button_id(C_XBOX_BUTTON_LS);}}
+      void press_right_stick(bool isPress){if(isPress){press_button_id(C_XBOX_BUTTON_RS);}else{release_button_id(C_XBOX_BUTTON_RS);}}
+      void press_menu_right(bool isPress){if(isPress){press_button_id(C_XBOX_BUTTON_START);}else{release_button_id(C_XBOX_BUTTON_START);}}
+      void press_menu_left(bool isPress){if(isPress){press_button_id(C_XBOX_BUTTON_SELECT);}else{release_button_id(C_XBOX_BUTTON_SELECT);}}
+      void press_home_xbox_button(bool isPress){if(isPress){press_button_id(C_XBOX_BUTTON_HOME);}else{release_button_id(C_XBOX_BUTTON_HOME);}}
+
+
+
+      void record_start(){
+          gamepad->pressShare();
+          gamepad->sendGamepadReport();
+      }
+      void record_stop(){
+          gamepad->releaseShare();
+          gamepad->sendGamepadReport();
+      }
+      void release_dpad(){
+              gamepad->releaseDPad();
+              gamepad->sendGamepadReport();
+      }
+      
+
+
+    void set_trigger_left_percent(float percent){ gamepad->setLeftTrigger(percent*TRIGGER_MAX); gamepad->sendGamepadReport(); }
+    void set_trigger_right_percent(float percent){ gamepad->setRightTrigger(percent*TRIGGER_MAX); gamepad->sendGamepadReport();}
+    void press_dpad(XboxDpadFlags direction , bool isPress){
+        if(isPress){
+              gamepad->pressDPadDirectionFlag(direction);
+              gamepad->sendGamepadReport();
         }
+        else{
+
+              gamepad->releaseDPad();
+              gamepad->sendGamepadReport();
+        }
+    }
+    void press_arrow_n(){press_dpad(XboxDpadFlags::NORTH,true);}
+    void press_arrow_e(){press_dpad(XboxDpadFlags::EAST,true);}
+    void press_arrow_s(){press_dpad(XboxDpadFlags::SOUTH,true);}
+    void press_arrow_w(){press_dpad(XboxDpadFlags::WEST,true);}
+    void press_arrow_ne(){press_dpad(XboxDpadFlags((uint8_t)XboxDpadFlags::NORTH | (uint8_t)XboxDpadFlags::EAST),true);}
+    void press_arrow_nw(){press_dpad(XboxDpadFlags((uint8_t)XboxDpadFlags::WEST | (uint8_t)XboxDpadFlags::NORTH),true);}
+    void press_arrow_se(){press_dpad(XboxDpadFlags((uint8_t)XboxDpadFlags::EAST | (uint8_t)XboxDpadFlags::SOUTH),true);}
+    void press_arrow_sw(){press_dpad(XboxDpadFlags((uint8_t)XboxDpadFlags::SOUTH | (uint8_t)XboxDpadFlags::WEST),true);}
+
+    void set_left_vertical_percent(float percent) {
+      if (!gamepad) return;
+      int16_t value = (int16_t)(percent * AXIS_MAX);
+      // Clamp to valid range
+      if (value < AXIS_MIN) value = AXIS_MIN;
+      if (value > AXIS_MAX) value = AXIS_MAX;
+
+      m_left_vertical = value;
+      gamepad->setLeftThumb(m_left_horizontal, m_left_vertical);
+      send_report();
+      Serial.println("[Set] Left vertical set to " + String(percent) + "%");
+    }
+
+    void set_left_horizontal_percent(float percent) {
+      if (!gamepad) return;
+      int16_t value = (int16_t)(percent * AXIS_MAX);
+      // Clamp to valid range
+      if (value < AXIS_MIN) value = AXIS_MIN;
+      if (value > AXIS_MAX) value = AXIS_MAX;
+      
+      m_left_horizontal = value;
+      gamepad->setLeftThumb(m_left_horizontal, m_left_vertical);
+      send_report();
+      Serial.println("[Set] Left horizontal set to " + String(percent) + "%");
+    }
+
+    void set_right_vertical_percent(float percent) {
+      if (!gamepad) return;
+      int16_t value = (int16_t)(percent * AXIS_MAX);
+      // Clamp to valid range
+      if (value < AXIS_MIN) value = AXIS_MIN;
+      if (value > AXIS_MAX) value = AXIS_MAX;
+      
+      m_right_vertical = value;
+      gamepad->setRightThumb(m_right_horizontal, m_right_vertical);
+      send_report();
+      Serial.println("[Set] Right vertical set to " + String(percent) + "%");
+    }
+
+    void set_right_horizontal_percent(float percent) {
+      if (!gamepad) return;
+      int16_t value = (int16_t)(percent * AXIS_MAX);
+      // Clamp to valid range
+      if (value < AXIS_MIN) value = AXIS_MIN;
+      if (value > AXIS_MAX) value = AXIS_MAX;
+      
+      m_right_horizontal = value;
+      gamepad->setRightThumb(m_right_horizontal, m_right_vertical);
+      send_report();
+      Serial.println("[Set] Right horizontal set to " + String(percent) + "%");
+    }
+
+    // Randomize all axes and triggers
+    void set_axis_randomly() {
+        int16_t lx = random(AXIS_MIN, AXIS_MAX_PLUS_ONE);
+        int16_t ly = random(AXIS_MIN, AXIS_MAX_PLUS_ONE);
+        int16_t rx = random(AXIS_MIN, AXIS_MAX_PLUS_ONE);
+        int16_t ry = random(AXIS_MIN, AXIS_MAX_PLUS_ONE);
+
+        uint8_t lt = random(TRIGGER_MIN, TRIGGER_MAX_PLUS_ONE);
+        uint8_t rt = random(TRIGGER_MIN, TRIGGER_MAX_PLUS_ONE);
+
+        gamepad->setLeftThumb(lx, ly);
+        gamepad->setRightThumb(rx, ry);
+        gamepad->setLeftTrigger(lt);
+        gamepad->setRightTrigger(rt);
+
+        send_report();
+        Serial.println("[Random] Axes & triggers randomized");
+    }
+ 
+    // Center all sticks, zero triggers
+    void set_axis_to_neutral() {
+        gamepad->setLeftThumb(AXIS_NEUTRAL, AXIS_NEUTRAL);
+        gamepad->setRightThumb(AXIS_NEUTRAL, AXIS_NEUTRAL);
+        gamepad->setLeftTrigger(TRIGGER_MIN);
+        gamepad->setRightTrigger(TRIGGER_MIN);
+
+        send_report();
+    }
+
+    // Release everything (buttons + axes)
+    void release_all() {
+        if (!gamepad) return;
+    
+        // gamepad->releaseAll();
+        // setNeutralAxes();  
+        send_report();
+    }
+
+    // Check connection status
+    // bool isConnected() const {
+    //     return compositeHID.isConnected();
+    // }
+
+private:
+    void send_report() {
+        if (gamepad) {
+            gamepad->sendGamepadReport();
+        }
+    }
+};
+
+
+
+class IIDUtility {
+public:
+  static int32_t byte_to_little_endian_int(byte b0, byte b1, byte b2, byte b3) {
+    return ((int32_t)b0) | ((int32_t)b1 << 8) | ((int32_t)b2 << 16) | ((int32_t)b3 << 24);
+  }
+
+  static uint64_t bytes_to_little_endian_uint64(byte b0, byte b1, byte b2, byte b3, byte b4, byte b5, byte b6, byte b7) {
+    return ((uint64_t)b0) | ((uint64_t)b1 << 8) | ((uint64_t)b2 << 16) | ((uint64_t)b3 << 24) | ((uint64_t)b4 << 32) | ((uint64_t)b5 << 40) | ((uint64_t)b6 << 48) | ((uint64_t)b7 << 56);
+  }
+
+  static void little_endian_int_to_bytes(int32_t value, uint8_t bytes[4]) {
+    bytes[0] = value & 0xFF;
+    bytes[1] = (value >> 8) & 0xFF;
+    bytes[2] = (value >> 16) & 0xFF;
+    bytes[3] = (value >> 24) & 0xFF;
+  }
+
+  static void little_endian_uint64_to_bytes(uint64_t value, uint8_t bytes[8]) {
+    bytes[0] = value & 0xFF;
+    bytes[1] = (value >> 8) & 0xFF;
+    bytes[2] = (value >> 16) & 0xFF;
+    bytes[3] = (value >> 24) & 0xFF;
+    bytes[4] = (value >> 32) & 0xFF;
+    bytes[5] = (value >> 40) & 0xFF;
+    bytes[6] = (value >> 48) & 0xFF;
+    bytes[7] = (value >> 56) & 0xFF;
+  }
 };
 
 /// @brief Allows to switch off print when code is ready.
-class DebugPrintStatic{
-    public:
-    static void debug_print(String text){
-        if (m_use_print_debug)
-        Serial.print(text);
-        }
-        static void debug_println(String text){
-            if (m_use_print_debug)
-            Serial.println(text);
-        }
-        
-        static bool is_using_debug_print(){
-            return m_use_print_debug;
-        }
-        static bool m_use_print_debug;
-    };
+class DebugPrintStatic {
+public:
+  static void debug_print(String text) {
+    if (m_use_print_debug)
+      Serial.print(text);
+  }
+  static void debug_println(String text) {
+    if (m_use_print_debug)
+      Serial.println(text);
+  }
+
+  static bool is_using_debug_print() {
+    return m_use_print_debug;
+  }
+  static bool m_use_print_debug;
+};
 
 bool DebugPrintStatic::m_use_print_debug = true;
 
 
 
 
+class GamepadXboxIntegerWrapper {
+public:
+  GamepadXboxBLE* gamepad() {
+    return m_gamepad;
+  }
+  GamepadXboxBLE* m_gamepad = nullptr;
+  void set_gamepad(GamepadXboxBLE* gp) {
+    m_gamepad = gp;
+  }
 
-/// @brief  Convert the integer received into Xbox BLE command
-class IntegerToGamepadXbox{
+  static constexpr int32_t COMMAND_PRESS_A = 1300;
+  static constexpr int32_t COMMAND_RELEASE_A = 2300;
+  static constexpr int32_t COMMAND_PRESS_X = 1301;
+  static constexpr int32_t COMMAND_RELEASE_X = 2301;
+  static constexpr int32_t COMMAND_PRESS_B = 1302;
+  static constexpr int32_t COMMAND_RELEASE_B = 2302;
+  static constexpr int32_t COMMAND_PRESS_Y = 1303;
+  static constexpr int32_t COMMAND_RELEASE_Y = 2303;
 
-    
-    public:
-        void integer_to_xbox_ble(int32_t value){
-            switch(value){
-                case 1601:
-                    //pressA(true);
-                    break;
-                case 2601:
-                    //releaseA(false);
-                    break;
-                default:
-                    DebugPrintStatic::debug_println("Unknown Xbox command: " + String(value));
-                    break;
-            }
-        }
+  static constexpr int32_t COMMAND_PRESS_LEFT_SIDE_BUTTON = 1304;
+  static constexpr int32_t COMMAND_RELEASE_LEFT_SIDE_BUTTON = 2304;
+  static constexpr int32_t COMMAND_PRESS_RIGHT_SIDE_BUTTON = 1305;
+  static constexpr int32_t COMMAND_RELEASE_RIGHT_SIDE_BUTTON = 2305;
+
+  static constexpr int32_t COMMAND_PRESS_LEFT_STICK = 1306;
+  static constexpr int32_t COMMAND_RELEASE_LEFT_STICK = 2306;
+  static constexpr int32_t COMMAND_PRESS_RIGHT_STICK = 1307;
+  static constexpr int32_t COMMAND_RELEASE_RIGHT_STICK = 2307;
+
+  static constexpr int32_t COMMAND_PRESS_MENU_RIGHT = 1308;
+  static constexpr int32_t COMMAND_RELEASE_MENU_RIGHT = 2308;
+  static constexpr int32_t COMMAND_PRESS_MENU_LEFT = 1309;
+  static constexpr int32_t COMMAND_RELEASE_MENU_LEFT = 2309;
+  static constexpr int32_t COMMAND_RELEASE_DPAD_A = 1310;
+  static constexpr int32_t COMMAND_RELEASE_DPAD_B = 2310;
+
+  static constexpr int32_t COMMAND_PRESS_DPAD_NORTH = 1311;
+  static constexpr int32_t COMMAND_RELEASE_DPAD_NORTH = 2311;
+  static constexpr int32_t COMMAND_PRESS_DPAD_NORTHEAST = 1312;
+  static constexpr int32_t COMMAND_RELEASE_DPAD_NORTHEAST = 2312;
+  static constexpr int32_t COMMAND_PRESS_DPAD_EAST = 1313;
+  static constexpr int32_t COMMAND_RELEASE_DPAD_EAST = 2313;
+  static constexpr int32_t COMMAND_PRESS_DPAD_SOUTHEAST = 1314;
+  static constexpr int32_t COMMAND_RELEASE_DPAD_SOUTHEAST = 2314;
+  static constexpr int32_t COMMAND_PRESS_DPAD_SOUTH = 1315;
+  static constexpr int32_t COMMAND_RELEASE_DPAD_SOUTH = 2315;
+  static constexpr int32_t COMMAND_PRESS_DPAD_SOUTHWEST = 1316;
+  static constexpr int32_t COMMAND_RELEASE_DPAD_SOUTHWEST = 2316;
+  static constexpr int32_t COMMAND_PRESS_DPAD_WEST = 1317;
+  static constexpr int32_t COMMAND_RELEASE_DPAD_WEST = 2317;
+  static constexpr int32_t COMMAND_PRESS_DPAD_NORTHWEST = 1318;
+  static constexpr int32_t COMMAND_RELEASE_DPAD_NORTHWEST = 2318;
+
+  static constexpr int32_t COMMAND_PRESS_HOME_XBOX_BUTTON = 1319;
+  static constexpr int32_t COMMAND_RELEASE_HOME_XBOX_BUTTON = 2319;
+
+  static constexpr int32_t COMMAND_PRESS_RANDOM_AXIS = 1320;
+  static constexpr int32_t COMMAND_RELEASE_RANDOM_AXIS = 2320;
+
+  static constexpr int32_t COMMAND_START_RECORDING = 1321;
+  static constexpr int32_t COMMAND_STOP_RECORDING = 2321;
+
+  void parse_integer(int32_t value) {
+    switch (value) {
+      case COMMAND_PRESS_A: gamepad()->press_a(true); break;
+      case COMMAND_RELEASE_A: gamepad()->press_a(false); break;
+      case COMMAND_PRESS_X: gamepad()->press_x(true); break;
+      case COMMAND_RELEASE_X: gamepad()->press_x(false); break;
+      case COMMAND_PRESS_B: gamepad()->press_b(true); break;
+      case COMMAND_RELEASE_B: gamepad()->press_b(false); break;
+      case COMMAND_PRESS_Y: gamepad()->press_y(true); break;
+      case COMMAND_RELEASE_Y: gamepad()->press_y(false); break;
+      
+      case COMMAND_PRESS_LEFT_SIDE_BUTTON: gamepad()->press_left_side_button(true); break;
+      case COMMAND_RELEASE_LEFT_SIDE_BUTTON: gamepad()->press_left_side_button(false); break;
+      case COMMAND_PRESS_RIGHT_SIDE_BUTTON: gamepad()->press_right_side_button(true); break;
+      case COMMAND_RELEASE_RIGHT_SIDE_BUTTON: gamepad()->press_right_side_button(false); break;
+      
+      case COMMAND_PRESS_LEFT_STICK: gamepad()->press_left_stick(true); break;
+      case COMMAND_RELEASE_LEFT_STICK: gamepad()->press_left_stick(false); break;
+      case COMMAND_PRESS_RIGHT_STICK: gamepad()->press_right_stick(true); break;
+      case COMMAND_RELEASE_RIGHT_STICK: gamepad()->press_right_stick(false); break;
+      
+      case COMMAND_PRESS_MENU_RIGHT: gamepad()->press_menu_right(true); break;
+      case COMMAND_RELEASE_MENU_RIGHT: gamepad()->press_menu_right(false); break;
+      case COMMAND_PRESS_MENU_LEFT: gamepad()->press_menu_left(true); break;
+      case COMMAND_RELEASE_MENU_LEFT: gamepad()->press_menu_left(false); break;
+
+
+      case COMMAND_PRESS_RANDOM_AXIS: gamepad()->set_axis_randomly(); break;
+      case COMMAND_RELEASE_RANDOM_AXIS: gamepad()->set_axis_to_neutral(); break;
+      
+      case 1330: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+      case 2330: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+      case 1331: gamepad()->set_left_vertical_percent(1);  gamepad()->set_left_horizontal_percent(0);     break;
+      case 2331: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+      case 1332: gamepad()->set_left_vertical_percent(1);  gamepad()->set_left_horizontal_percent(1);     break;
+      case 2332: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+      case 1333: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(1);     break;
+      case 2333: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+      case 1334: gamepad()->set_left_vertical_percent(-1); gamepad()->set_left_horizontal_percent(1);    break;
+      case 2334: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+      case 1335: gamepad()->set_left_vertical_percent(-1); gamepad()->set_left_horizontal_percent(0);    break;
+      case 2335: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+      case 1336: gamepad()->set_left_vertical_percent(-1); gamepad()->set_left_horizontal_percent(-1);   break;
+      case 2336: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+      case 1337: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(-1);    break;
+      case 2337: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+      case 1338: gamepad()->set_left_vertical_percent(1);   gamepad()->set_left_horizontal_percent(-1);    break;
+      case 2338: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+      case 1340: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+      case 2340: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+      case 1341: gamepad()->set_right_vertical_percent(1); gamepad()->set_right_horizontal_percent(0);    break;
+      case 2341: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+      case 1342: gamepad()->set_right_vertical_percent(1); gamepad()->set_right_horizontal_percent(1);    break;
+      case 2342: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+      case 1343: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(1);    break;
+      case 2343: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+      case 1344: gamepad()->set_right_vertical_percent(-1); gamepad()->set_right_horizontal_percent(1);   break;
+      case 2344: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+      case 1345: gamepad()->set_right_vertical_percent(-1); gamepad()->set_right_horizontal_percent(0);   break;
+      case 2345: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+      case 1346: gamepad()->set_right_vertical_percent(-1); gamepad()->set_right_horizontal_percent(-1);  break;
+      case 2346: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+      case 1347: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(-1);   break;
+      case 2347: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+      case 1348: gamepad()->set_right_vertical_percent(1); gamepad()->set_right_horizontal_percent(-1);   break;
+      case 2348: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+
+
+
+
+      case 1310: gamepad()->release_dpad(); break;
+      case 2310: gamepad()->release_dpad(); break;
+      case 1311: gamepad()->press_arrow_n(); break;
+      case 2311: gamepad()->release_dpad(); break;
+      case 1312: gamepad()->press_arrow_ne(); break;
+      case 2312: gamepad()->release_dpad(); break;
+      case 1313: gamepad()->press_arrow_e(); break;
+      case 2313: gamepad()->release_dpad(); break;
+      case 1314: gamepad()->press_arrow_se(); break;
+      case 2314: gamepad()->release_dpad(); break;
+      case 1315: gamepad()->press_arrow_s(); break;
+      case 2315: gamepad()->release_dpad(); break;
+      case 1316: gamepad()->press_arrow_sw(); break;
+      case 2316: gamepad()->release_dpad(); break;
+      case 1317: gamepad()->press_arrow_w(); break;
+      case 2317: gamepad()->release_dpad(); break;
+      case 1318: gamepad()->press_arrow_nw(); break;
+      case 2318: gamepad()->release_dpad(); break;
+      case 1319: gamepad()->press_home_xbox_button(true); break;
+      case 2319: gamepad()->press_home_xbox_button(false); break;
+ 
+      case 1321: gamepad()->record_start(); break;
+      case 2321: gamepad()->record_stop(); break;
+
+            case 1350: gamepad()->set_left_horizontal_percent(1); break;
+            case 2350: gamepad()->set_left_horizontal_percent(0); break;
+            case 1351: gamepad()->set_left_horizontal_percent(-1); break;
+            case 2351: gamepad()->set_left_horizontal_percent(0); break;
+            case 1352: gamepad()->set_left_vertical_percent(1); break;
+            case 2352: gamepad()->set_left_vertical_percent(0); break;
+            case 1353: gamepad()->set_left_vertical_percent(-1); break;
+            case 2353: gamepad()->set_left_vertical_percent(0); break;
+            case 1354: gamepad()->set_right_horizontal_percent(1); break;
+            case 2354: gamepad()->set_right_horizontal_percent(0); break;
+            case 1355: gamepad()->set_right_horizontal_percent(-1); break;
+            case 2355: gamepad()->set_right_horizontal_percent(0); break;
+            case 1356: gamepad()->set_right_vertical_percent(1); break;
+            case 2356: gamepad()->set_right_vertical_percent(0); break;
+            case 1357: gamepad()->set_right_vertical_percent(-1); break;
+            case 2357: gamepad()->set_right_vertical_percent(0); break;
+            case 1358: gamepad()->set_trigger_left_percent(1); break;
+            case 2358: gamepad()->set_trigger_left_percent(0); break;
+            case 1359: gamepad()->set_trigger_right_percent(1); break;
+            case 2359: gamepad()->set_trigger_right_percent(0); break;
+            case 1360: gamepad()->set_left_horizontal_percent(0.75); break;
+            case 2360: gamepad()->set_left_horizontal_percent(0); break;
+            case 1361: gamepad()->set_left_horizontal_percent(-0.75); break;
+            case 2361: gamepad()->set_left_horizontal_percent(0); break;
+            case 1362: gamepad()->set_left_vertical_percent(0.75); break;
+            case 2362: gamepad()->set_left_vertical_percent(0); break;
+            case 1363: gamepad()->set_left_vertical_percent(-0.75); break;
+            case 2363: gamepad()->set_left_vertical_percent(0); break;
+            case 1364: gamepad()->set_right_horizontal_percent(0.75); break;
+            case 2364: gamepad()->set_right_horizontal_percent(0); break;
+            case 1365: gamepad()->set_right_horizontal_percent(-0.75); break;
+            case 2365: gamepad()->set_right_horizontal_percent(0); break;
+            case 1366: gamepad()->set_right_vertical_percent(0.75); break;
+            case 2366: gamepad()->set_right_vertical_percent(0); break;
+            case 1367: gamepad()->set_right_vertical_percent(-0.75); break;
+            case 2367: gamepad()->set_right_vertical_percent(0); break;
+            case 1368: gamepad()->set_trigger_left_percent(0.75); break;
+            case 2368: gamepad()->set_trigger_left_percent(0); break;
+            case 1369: gamepad()->set_trigger_right_percent(0.75); break;
+            case 2369: gamepad()->set_trigger_right_percent(0); break;
+            case 1370: gamepad()->set_left_horizontal_percent(0.5); break;
+            case 2370: gamepad()->set_left_horizontal_percent(0); break;
+            case 1371: gamepad()->set_left_horizontal_percent(-0.5); break;
+            case 2371: gamepad()->set_left_horizontal_percent(0); break;
+            case 1372: gamepad()->set_left_vertical_percent(0.5); break;
+            case 2372: gamepad()->set_left_vertical_percent(0); break;
+            case 1373: gamepad()->set_left_vertical_percent(-0.5); break;
+            case 2373: gamepad()->set_left_vertical_percent(0); break;
+            case 1374: gamepad()->set_right_horizontal_percent(0.5); break;
+            case 2374: gamepad()->set_right_horizontal_percent(0); break;
+            case 1375: gamepad()->set_right_horizontal_percent(-0.5); break;
+            case 2375: gamepad()->set_right_horizontal_percent(0); break;
+            case 1376: gamepad()->set_right_vertical_percent(0.5); break;
+            case 2376: gamepad()->set_right_vertical_percent(0); break;
+            case 1377: gamepad()->set_right_vertical_percent(-0.5); break;
+            case 2377: gamepad()->set_right_vertical_percent(0); break;
+            case 1378: gamepad()->set_trigger_left_percent(0.5); break;
+            case 2378: gamepad()->set_trigger_left_percent(0); break;
+            case 1379: gamepad()->set_trigger_right_percent(0.5); break;
+            case 2379: gamepad()->set_trigger_right_percent(0); break;
+            case 1380: gamepad()->set_left_horizontal_percent(0.25); break;
+            case 2380: gamepad()->set_left_horizontal_percent(0); break;
+            case 1381: gamepad()->set_left_horizontal_percent(-0.25); break;
+            case 2381: gamepad()->set_left_horizontal_percent(0); break;
+            case 1382: gamepad()->set_left_vertical_percent(0.25); break;
+            case 2382: gamepad()->set_left_vertical_percent(0); break;
+            case 1383: gamepad()->set_left_vertical_percent(-0.25); break;
+            case 2383: gamepad()->set_left_vertical_percent(0); break;
+            case 1384: gamepad()->set_right_horizontal_percent(0.25); break;
+            case 2384: gamepad()->set_right_horizontal_percent(0); break;
+            case 1385: gamepad()->set_right_horizontal_percent(-0.25); break;
+            case 2385: gamepad()->set_right_horizontal_percent(0); break;
+            case 1386: gamepad()->set_right_vertical_percent(0.25); break;
+            case 2386: gamepad()->set_right_vertical_percent(0); break;
+            case 1387: gamepad()->set_right_vertical_percent(-0.25); break;
+            case 2387: gamepad()->set_right_vertical_percent(0); break;
+            case 1388: gamepad()->set_trigger_left_percent(0.25); break;
+            case 2388: gamepad()->set_trigger_left_percent(0); break;
+            case 1389: gamepad()->set_trigger_right_percent(0.25); break;
+            case 2389: gamepad()->set_trigger_right_percent(0); break;
+
+      default:
+        break;
+    }
+
+
+//   if(value>=1000 && value<=2999){
+//         switch(value){
+//             case 1399: randomInputAllGamepadNoMenu(); break;
+//             case 2399: releaseAllGamepad(); break;
+
+
+
+//         }
+//    }
+//    else if(value>=1800000000 && value<=1899999999){
+
+//     //18 50 20 00 10
+//     //1850200010
+//     //4 bytes because integer
+//     int leftHorizontalfrom1to99 =   (value/1000000)%100;
+//     int leftVerticalfrom1to99 =     (value/10000)%100;
+//     int rightHorizontalfrom1to99 =  (value/100)%100;
+//     int rightVerticalfrom1to99 =    (value/1)%100;
+//     float leftHorizontalPercent= turnFrom1To99AsPercent(leftHorizontalfrom1to99);
+//     float leftVerticalPercent= turnFrom1To99AsPercent(leftVerticalfrom1to99);
+//     float rightHorizontalPercent= turnFrom1To99AsPercent(rightHorizontalfrom1to99);
+//     float rightVerticalPercent= turnFrom1To99AsPercent(rightVerticalfrom1to99);
+//     setLeftHorizontal(leftHorizontalPercent);
+//     setLeftVertical(leftVerticalPercent);
+//     setRightHorizontal(rightHorizontalPercent);
+//     setRightVertical(rightVerticalPercent);
+//    }
+//    else if(value>=1700000000 && value<=1799999999){
+//       m_binaryBufferOfInteger[33]; // Buffer to store the binary representation (32 bits + null terminator)
+//       intToBinaryBuffer(value, m_binaryBufferOfInteger, 33);
+//       Serial.println(m_binaryBufferOfInteger);
+//       value=value-1700000000;
+//       intToBinaryBuffer(value,m_binaryBufferOfInteger,33);
+//       Serial.println(m_binaryBufferOfInteger);
+
+
+//       float triggerLeft=0.0;
+//       float triggerRight=0.0;
+//       float arrowHorizontal=0;
+//       float arrowVertical =0;
+//       if(isIntegerBitRightToLeftTrue(value, 0)) pressA(true);
+//       else pressA(false);
+//       if(isIntegerBitRightToLeftTrue(value, 1)) pressX(true);
+//       else pressX(false);
+//       if(isIntegerBitRightToLeftTrue(value, 2)) pressB(true);
+//       else pressB(false);
+//       if(isIntegerBitRightToLeftTrue(value, 3)) pressY(true);
+//       else pressY(false);
+//       if(isIntegerBitRightToLeftTrue(value, 4)) pressLeftSideButton(true);
+//       else pressLeftSideButton(false);
+//       if(isIntegerBitRightToLeftTrue(value, 5)) pressRightSideButton(true);
+//       else pressRightSideButton(false);
+//       if(isIntegerBitRightToLeftTrue(value, 6)) pressLeftStick(true);
+//       else pressLeftStick(false);
+//       if(isIntegerBitRightToLeftTrue(value, 7)) pressRightStick(true);
+//       else pressRightStick(false);
+//       if(isIntegerBitRightToLeftTrue(value, 8)) pressMenuLeft(true);
+//       else pressMenuLeft(false);
+//       if(isIntegerBitRightToLeftTrue(value, 9)) pressMenuRight(true);
+//       else pressMenuRight(false);
+//       if(isIntegerBitRightToLeftTrue(value, 10)) pressHomeXboxButton(true);
+//       else pressHomeXboxButton(false);
+//       if(isIntegerBitRightToLeftTrue(value, 11)) arrowVertical+=1; // CLOCK WISE N
+//       if(isIntegerBitRightToLeftTrue(value, 12)) arrowHorizontal+=1; // CLOCK WISE E
+//       if(isIntegerBitRightToLeftTrue(value, 13)) arrowVertical+=-1; // CLOCK WISE S
+//       if(isIntegerBitRightToLeftTrue(value, 14)) arrowHorizontal+=-1; //// CLOCK WISE W
+
+//       if(isIntegerBitRightToLeftTrue(value, 18)) triggerLeft+=(0.25);
+//       if(isIntegerBitRightToLeftTrue(value, 19)) triggerLeft+=(0.25);
+//       if(isIntegerBitRightToLeftTrue(value, 20)) triggerLeft+=(0.5);
+//       if(isIntegerBitRightToLeftTrue(value, 21)) triggerRight+=(0.25);
+//       if(isIntegerBitRightToLeftTrue(value, 22)) triggerRight+=(0.25);
+//       if(isIntegerBitRightToLeftTrue(value, 23)) triggerRight+=(0.5);
+//       setTriggerLeftPercent(triggerLeft);
+//       setTriggerRightPercent(triggerRight);
+
+//       if(arrowVertical==1 && arrowHorizontal==0)
+//           pressArrowN();
+//       else if(arrowVertical==1 && arrowHorizontal==1)
+//           pressArrowNE();
+//       else if(arrowVertical==0 && arrowHorizontal==1)
+//           pressArrowE();
+//       else if(arrowVertical==-1 && arrowHorizontal==1)
+//           pressArrowSE();
+//       else if(arrowVertical==-1 && arrowHorizontal==0)
+//           pressArrowS();
+//       else if(arrowVertical==-1 && arrowHorizontal==-1)
+//           pressArrowSW();
+//       else if(arrowVertical==0 && arrowHorizontal==-1)
+//           pressArrowW();
+//       else if(arrowVertical==1 && arrowHorizontal==-1)
+//           pressArrowNW();
+//       else
+//           releaseDPad();
+//       bool useDebugPrint = false;
+//     if(useDebugPrint){
+//       Serial.print(" A:");
+//       Serial.print(isIntegerBitRightToLeftTrue(value, 0));
+//       Serial.print(" X:");
+//       Serial.print(isIntegerBitRightToLeftTrue(value, 1));
+//       Serial.print(" B:");
+//       Serial.print(isIntegerBitRightToLeftTrue(value, 2));
+//       Serial.print(" Y:");
+//       Serial.print(isIntegerBitRightToLeftTrue(value, 3));
+//         Serial.print(" LB:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 4));
+//         Serial.print(" RB:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 5));
+//         Serial.print(" LS:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 6));
+//         Serial.print(" RS:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 7));
+//         Serial.print(" MENU:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 8));
+//         Serial.print(" HOME:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 9));
+//         Serial.print(" DPad N:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 10));
+//         Serial.print(" DPad NE:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 11));
+//         Serial.print(" DPad E:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 12));
+//         Serial.print(" DPad SE:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 13));
+//         Serial.print(" DPad S:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 14));
+//         Serial.print(" DPad SW:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 15));
+//         Serial.print(" DPad W:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 16));
+//         Serial.print(" DPad NW:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 17));
+//         Serial.print(" Left Trigger 0.25 1:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 18));
+//         Serial.print(" Left Trigger 0.25 2:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 19));
+//         Serial.print(" Left Trigger 0.5 3 :");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 20));
+//         Serial.print(" Right Trigger 0.25 1:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 21));
+//         Serial.print(" Right Trigger 0.25 2:");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 22));
+//         Serial.print(" Right Trigger 0.5 3 :");
+//         Serial.print(isIntegerBitRightToLeftTrue(value, 23));
+//         Serial.println();
+//     }
+//       //1715243245
+//       //11111111 11111111 11111111 11111111
+//       /*
+//       00 bit 1 0
+//       byte 11111111  255
+//       signe byte 01111111 -127 127
+//       float integer -1.0 ,1.0
+//       11111111 11111111 11111111 11111111
+//       deux bytes (short)
+//       11111111 11011111 65535
+//       11111111 * 20 * 100000000000
+//       2 bytes 2 char
+//       BD BR BU BL  JD JR BTL BTR  ML MC MR AD AR AU AL
+//       0  0  0  0   0  0  0   0    0  0  0  0  0  0  0
+//       jlv jlh jrv jrh tl tr
+//       9   9   9   9   9  9
+//       */
+//     }
+// }
+
+  }
 };
 
 
@@ -87,146 +744,150 @@ class IntegerToGamepadXbox{
 
 
 
-class AbstractIndexIntegerDateUdpRelay{
-    public:
-        virtual void push_in_integer(int32_t index, int32_t value, uint64_t date ) = 0;
-        virtual ~AbstractIndexIntegerDateUdpRelay() = default;
+
+class AbstractIndexIntegerDateUdpRelay {
+public:
+  virtual void push_in_integer(int32_t index, int32_t value, uint64_t date) = 0;
+  virtual ~AbstractIndexIntegerDateUdpRelay() = default;
 };
 
 
-class DefaultIntegerUdpRelay : public AbstractIndexIntegerDateUdpRelay{
-    public:
-        IntegerToGamepadXbox int_to_gamepad_xbox;
-        void push_in_integer(int32_t index, int32_t value, uint64_t date) override {
-            DebugPrintStatic::debug_println("Index: " + String(index) + " Value: " + String(value) + " Date: " + String(date));
-            int_to_gamepad_xbox.integer_to_xbox_ble(value);
-        }
+class DefaultIntegerUdpRelay : public AbstractIndexIntegerDateUdpRelay {
+public:
+  GamepadXboxIntegerWrapper int_to_gamepad_xbox;
+  GamepadXboxBLE* gamepad = nullptr;
+
+  void set_gamepad(GamepadXboxBLE* gp) {
+    gamepad = gp;
+    int_to_gamepad_xbox.set_gamepad(gp);
+  }
+  
+  void push_in_integer(int32_t index, int32_t value, uint64_t date) override {
+    DebugPrintStatic::debug_println("Index: " + String(index) + " Value: " + String(value) + " Date: " + String(date));
+    int_to_gamepad_xbox.parse_integer(value);
+  }
 };
 
 
 class IntegerListenToUDP {
-    
-    public:
-        const char* ssid     = "EloiStreeWifi2G";
-        const char* password = "11234566";
 
-        WiFiUDP wifi_udp_listener;
-        int UDP_PORT = 3615;
-        String only_accept_from_ip = "0.0.0.0";
-        AbstractIndexIntegerDateUdpRelay* udp_relay = nullptr;
+public:
+  const char* ssid = "EloiStreeWifi2G";
+  const char* password = "11234566";
 
-        void set_udp_relay(AbstractIndexIntegerDateUdpRelay* relay){
-            udp_relay = relay;
+  WiFiUDP wifi_udp_listener;
+  int UDP_PORT = 3615;
+  String only_accept_from_ip = "0.0.0.0";
+  AbstractIndexIntegerDateUdpRelay* udp_relay = nullptr;
+
+  void set_udp_relay(AbstractIndexIntegerDateUdpRelay* relay) {
+    udp_relay = relay;
+  }
+
+  void setup(String wifi_name, String wifi_password, int32_t udp_port_to_listen, String accept_from_ip = "0.0.0.0") {
+    ssid = wifi_name.c_str();
+    password = wifi_password.c_str();
+    UDP_PORT = udp_port_to_listen;
+    only_accept_from_ip = accept_from_ip;
+    WiFi.begin(ssid, password);
+    Serial.print("Connecting");
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(300);
+      Serial.print(".");
+    }
+    Serial.println("\nConnected!");
+
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
+
+    wifi_udp_listener.begin(udp_port_to_listen);
+    Serial.printf("UDP server listening on 0.0.0.0:%d\n", udp_port_to_listen);
+    Serial.println("Accepting from IP: " + only_accept_from_ip);
+  }
+
+  void loop() {
+    int packetSize = wifi_udp_listener.parsePacket();
+    if (packetSize > 0) {
+      uint8_t buffer[512];
+      int len = wifi_udp_listener.read(buffer, sizeof(buffer) - 1);
+      String fromIp = wifi_udp_listener.remoteIP().toString();
+
+      if (only_accept_from_ip != "0.0.0.0" && fromIp != only_accept_from_ip) {
+        DebugPrintStatic::debug_println("Ignored packet from " + fromIp);
+        return;
+      }
+
+
+      if (len > 0) {
+        if (DebugPrintStatic::is_using_debug_print()) {
+          Serial.printf("Received %d bytes from %s:%d, forwarded to UART\n",
+                        len,
+                        wifi_udp_listener.remoteIP().toString().c_str(),
+                        wifi_udp_listener.remotePort());
         }
-       
-        void setup(String wifi_name ,String  wifi_password , int32_t udp_port_to_listen, String accept_from_ip = "0.0.0.0"){
-            ssid = wifi_name.c_str();
-            password = wifi_password.c_str();
-            UDP_PORT = udp_port_to_listen;
-            only_accept_from_ip = accept_from_ip;
-            WiFi.begin(ssid, password);
-            Serial.print("Connecting");
-            while (WiFi.status() != WL_CONNECTED) {
-                delay(300);
-                Serial.print(".");
-            }
-            Serial.println("\nConnected!");
+        if (len == 4) {
+          int32_t value = IIDUtility::byte_to_little_endian_int(buffer[0], buffer[1], buffer[2], buffer[3]);
+          if (udp_relay != nullptr) {
+            udp_relay->push_in_integer(0, value, 0);
+          }
+        } else if (len == 16) {
 
-            Serial.print("IP Address: ");
-            Serial.println(WiFi.localIP());
-
-            wifi_udp_listener.begin(udp_port_to_listen);
-            Serial.printf("UDP server listening on 0.0.0.0:%d\n", udp_port_to_listen);
-            Serial.println("Accepting from IP: " + only_accept_from_ip);
+          int32_t index = IIDUtility::byte_to_little_endian_int(buffer[0], buffer[1], buffer[2], buffer[3]);
+          int32_t value = IIDUtility::byte_to_little_endian_int(buffer[4], buffer[5], buffer[6], buffer[7]);
+          uint64_t date = IIDUtility::bytes_to_little_endian_uint64(buffer[8], buffer[9], buffer[10], buffer[11], buffer[12], buffer[13], buffer[14], buffer[15]);
+          if (udp_relay != nullptr) {
+            udp_relay->push_in_integer(index, value, date);
+          }
+        } else if (len == 8) {
+          int32_t index = IIDUtility::byte_to_little_endian_int(buffer[0], buffer[1], buffer[2], buffer[3]);
+          int32_t value = IIDUtility::byte_to_little_endian_int(buffer[4], buffer[5], buffer[6], buffer[7]);
+          if (udp_relay != nullptr) {
+            udp_relay->push_in_integer(index, value, 0);
+          }
+        } else if (len == 12) {
+          int32_t value = IIDUtility::byte_to_little_endian_int(buffer[0], buffer[1], buffer[2], buffer[3]);
+          uint64_t date = IIDUtility::bytes_to_little_endian_uint64(buffer[4], buffer[5], buffer[6], buffer[7], buffer[8], buffer[9], buffer[10], buffer[11]);
+          if (udp_relay != nullptr) {
+            udp_relay->push_in_integer(0, value, date);
+          }
         }
-
-        void loop()
-        {
-            int packetSize = wifi_udp_listener.parsePacket();
-            if (packetSize > 0)
-            {
-                uint8_t buffer[512];
-                int len = wifi_udp_listener.read(buffer, sizeof(buffer) - 1);
-                String fromIp = wifi_udp_listener.remoteIP().toString();
-                
-                if (only_accept_from_ip != "0.0.0.0" && fromIp != only_accept_from_ip) {
-                    DebugPrintStatic::debug_println("Ignored packet from " + fromIp);
-                    return;
-                }
-
-
-                if (len > 0) {
-                    if(DebugPrintStatic::is_using_debug_print()){
-                        Serial.printf("Received %d bytes from %s:%d, forwarded to UART\n", 
-                                      len, 
-                                      wifi_udp_listener.remoteIP().toString().c_str(), 
-                                      wifi_udp_listener.remotePort());
-                    }
-                    if (len ==4)
-                    {
-                        int32_t value = IIDUtility::byte_to_little_endian_int(buffer[0], buffer[1], buffer[2], buffer[3]);
-                        if(udp_relay!=nullptr){
-                            udp_relay->push_in_integer(0, value, 0);
-                        }
-                    }
-                    else if (len ==16){
-
-                        int32_t index = IIDUtility::byte_to_little_endian_int(buffer[0], buffer[1], buffer[2], buffer[3]);
-                        int32_t value = IIDUtility::byte_to_little_endian_int(buffer[4], buffer[5], buffer[6], buffer[7]);
-                        uint64_t date = IIDUtility::bytes_to_little_endian_uint64(buffer[8], buffer[9], buffer[10], buffer[11], buffer[12], buffer[13], buffer[14], buffer[15]);
-                        if(udp_relay!=nullptr){
-                            udp_relay->push_in_integer(index, value, date);
-                        }
-                    }
-                    else if (len ==8){
-                        int32_t index = IIDUtility::byte_to_little_endian_int(buffer[0], buffer[1], buffer[2], buffer[3]);
-                        int32_t value = IIDUtility::byte_to_little_endian_int(buffer[4], buffer[5], buffer[6], buffer[7]);
-                        if(udp_relay!=nullptr){
-                            udp_relay->push_in_integer(index, value, 0);
-                        }
-                    }
-                    else if(len ==12){
-                        int32_t value = IIDUtility::byte_to_little_endian_int(buffer[0], buffer[1], buffer[2], buffer[3]);
-                        uint64_t date = IIDUtility::bytes_to_little_endian_uint64(buffer[4], buffer[5], buffer[6], buffer[7], buffer[8], buffer[9], buffer[10], buffer[11]);
-                        if(udp_relay!=nullptr){
-                            udp_relay->push_in_integer(0, value, date);
-                        }
-                    }
-                }
-            
-            }
-            delay(1);
-        }
+      }
+    }
+    delay(1);
+  }
 };
 
 
 class MainManager {
-    public:
-        IntegerListenToUDP udp_listener;
-        DefaultIntegerUdpRelay udp_iid_relay;
-        
-        void setup() {
-            udp_iid_relay = DefaultIntegerUdpRelay();
-            udp_listener = IntegerListenToUDP();
-            udp_listener.set_udp_relay(&udp_iid_relay);
-            udp_listener.setup("EloiStreeWifi2G", "11234566", 3615, "192.168.178.38");
-        }
+public:
+  IntegerListenToUDP udp_listener;
+  DefaultIntegerUdpRelay udp_iid_relay;
+  
+  void setup() {
+    GamepadXboxBLE* gamepad = new GamepadXboxBLE();
+    gamepad->begin();
+    udp_iid_relay = DefaultIntegerUdpRelay();
+    udp_listener = IntegerListenToUDP();
+    udp_listener.set_udp_relay(&udp_iid_relay);
+    udp_iid_relay.set_gamepad(gamepad);
+    udp_listener.setup("EloiStreeWifi2G", "11234566", 3615, "192.168.178.38");
+  }
 
-        void loop() {
-            udp_listener.loop();
-            delay(1);
-        }
+  void loop() {
+    udp_listener.loop();
+    delay(1);
+  }
 };
 
 MainManager main_manager;
 
 void setup() {
-    Serial.begin(115200);
-    main_manager.setup();
+  Serial.begin(115200);
+  main_manager.setup();
 }
 
 void loop() {
-    main_manager.loop();
+  main_manager.loop();
 }
 
 
@@ -243,7 +904,7 @@ void loop() {
 //  * If you think my code made you win a day of work,
 //  * send me a good 🍺 or a 🍕 at
 //  *  - https://www.patreon.com/eloiteaching
-//  * 
+//  *
 //  * You can also support my work by building your own DIY input using Amazon links:
 //  * - https://github.com/EloiStree/HelloInput
 //  *
@@ -318,9 +979,9 @@ void loop() {
 // // 1:c(FFFF) THE DEVICE EXPECT UTF8 AS FOUR CHARACTERS TURN THEM INTO INTEGER
 // // 2:c(ffff) THE DEVICE EXPECT \n AS END OF COMMAND THEN TURN TEXT IN INTEGER
 // // Those byte are reserved for mode change
-// //M:1 b(70 70 70 70) = UTF8 MODE C4:FFFF | Int:1179010630 
-// //M:2 b(214 214 214 214) = TEXT INTEGER MODE C4:ffff |  Int:1717986918 
-// //M:0 b(73 73 73 73) = INTEGER MODE C4:IIII |  Int:1229539657  
+// //M:1 b(70 70 70 70) = UTF8 MODE C4:FFFF | Int:1179010630
+// //M:2 b(214 214 214 214) = TEXT INTEGER MODE C4:ffff |  Int:1717986918
+// //M:0 b(73 73 73 73) = INTEGER MODE C4:IIII |  Int:1229539657
 // //CMD b(48 48 48 48) = RESET INDEX TO ZERO C4:0000 | Int:808464432
 // //CMD b(0 0 0 0) = RESET INDEX TO ZERO from bytes Int:0
 // int m_readingMode=2;
@@ -466,10 +1127,10 @@ void loop() {
 // void setup()
 // {
 //   Serial.begin(115200);
-//   pinMode(m_lepPin, OUTPUT); 
+//   pinMode(m_lepPin, OUTPUT);
 //   XboxSeriesXControllerDeviceConfiguration* gamepadConfig = new XboxSeriesXControllerDeviceConfiguration();
 //   // The composite HID device pretends to be a valid Xbox controller via vendor and product IDs (VID/PID).
-//   // Platforms like windows/linux need this in order to pick an XInput driver over the generic BLE GATT HID driver. 
+//   // Platforms like windows/linux need this in order to pick an XInput driver over the generic BLE GATT HID driver.
 //   BLEHostConfiguration hostConfig = gamepadConfig->getIdealHostConfiguration();
 //   Serial.println("Using VID source: " + String(hostConfig.getVidSource(), HEX));
 //   Serial.println("Using VID: " + String(hostConfig.getVid(), HEX));
@@ -487,7 +1148,7 @@ void loop() {
 //   releaseAllGamepad();
 
 //   Serial.println("Starting BLE work!");
-//   Serial2.begin(9600, SERIAL_8N1, RXD2, TXD2);  
+//   Serial2.begin(9600, SERIAL_8N1, RXD2, TXD2);
 //   Serial.println("UART1 initialized.");
 
 // }
@@ -530,8 +1191,8 @@ void loop() {
 //         integerCommandReceived(number);
 //     }
 //     else{
-//         Serial.print("CMD:"); 
-//         Serial.println(input); 
+//         Serial.print("CMD:");
+//         Serial.println(input);
 //         if(input=="Hello"){
 //           Serial.println("Hello there");
 //         }
@@ -545,7 +1206,7 @@ void loop() {
 // bool isNumericString(String str) {
 //   for (int i = 0; i < str.length(); i++) {
 //     char c = str.charAt(i);
-//     if(c=='0' || c=='1' || c=='2' || c=='3' || c=='4' 
+//     if(c=='0' || c=='1' || c=='2' || c=='3' || c=='4'
 //     || c=='5' || c=='6' || c=='7' || c=='8' || c=='9'
 //     || c=='\n' || c=='\r' || c==' '){
 //         continue;
@@ -571,18 +1232,18 @@ void loop() {
 //     for(int i=0; i<m_activablePinIOLength; i++){
 //         SetPinOnOff(i, value);
 //     }
-  
+
 // }
 
 
 // void traditionalTextCommand(String text){
-  
-  
+
+
 //     text.trim();
 //     Serial.print("CMD:");
 //     Serial.println(text);
 //     BE_SendSoundPing();
-    
+
 
 //   // 32 (Space)
 //   // 33-47 (Special Characters): ! " # $ % & ' ( ) * + , - . /
@@ -594,7 +1255,7 @@ void loop() {
 //   // 123-126 (Special Characters): { | } ~
 
 //     // Using Bluetooth Electronic Default version
-//     // Buttons 
+//     // Buttons
 //     if(text=="G") pressA(true);
 //     else if(text=="BEDEBUG") m_useBluetoothElectronicFeedBack=true;
 //     else if(text=="bedebug") m_useBluetoothElectronicFeedBack=false;
@@ -663,7 +1324,7 @@ void loop() {
 //     else if(text=="mc") pressHomeXboxButton(false);
 //     // Big Grey Circle
 //     else if(text=="M"){}
-//     // Big Rectancle 
+//     // Big Rectancle
 //     else if(text=="W"){}
 //     // Switch vertical on off
 //     else if(text=="C") m_useHardwareJoystick=true;
@@ -692,7 +1353,7 @@ void loop() {
 
 // void BE_RemindMeOfPinNumber(int pinIndex){
 
-//     if(!m_useBluetoothElectronicFeedBack) 
+//     if(!m_useBluetoothElectronicFeedBack)
 //         return;
 //     if(pinIndex<0 || pinIndex>= m_activablePinIOLength){
 //        Serial2.print("No pin for index:");
@@ -739,7 +1400,7 @@ void loop() {
 //       if(m_activablePinIOState[index]==HIGH)
 //         BE_SendColorInfo(p, 1.0, 1.0, 1.0);
 //       else
-//         BE_SendColorInfo(p, 0.1, 0.1, 0.1); 
+//         BE_SendColorInfo(p, 0.1, 0.1, 0.1);
 //     }
 // }
 
@@ -761,7 +1422,7 @@ void loop() {
 // void ParseIfContainsPinOnOff(String text){
 
 //     int length = text.length();
-//     if(length>4) 
+//     if(length>4)
 //         return;
 //     if(!(text.charAt(0)=='P'||text.charAt(0)=='p'))
 //         return;
@@ -769,7 +1430,7 @@ void loop() {
 //     int pin = text.substring(1).toInt();
 //     if(pin<0 || pin>=m_activablePinIOLength)
 //         return;
-        
+
 //     SetPinOnOff(pin, isOn);
 // }
 
@@ -794,7 +1455,7 @@ void loop() {
 //             setLeftHorizontal(x);
 //             setLeftVertical(-y);
 //         }
-//     } 
+//     }
 //     else if (text.startsWith("RX")) {
 //         isFound = true;
 //         int xIndex = text.indexOf('X') + 1; // After RX
@@ -809,7 +1470,7 @@ void loop() {
 //             setRightVertical(-y);
 //         }
 
-//     } 
+//     }
 //     else if (text.startsWith("X")) {
 //         isFound = true;
 //         int xIndex = text.indexOf('X') + 1;
@@ -833,7 +1494,7 @@ void loop() {
 //             float triggerValue = text.substring(tlIndex).toInt();
 //             setTriggerLeftPercent(triggerValue/100.0);
 //         }
-//     } 
+//     }
 //     else if (text.startsWith("TR")) {
 //         isFound = true;
 //         int trIndex = text.indexOf('R') + 1; // After TR
@@ -856,7 +1517,7 @@ void loop() {
 //             // Extract and convert X and Y values
 //             String pitch = text.substring(startIndex, commaIndex);
 //             String roll = text.substring(commaIndex + 1, starIndex);
-            
+
 //             x = ((pitch.toFloat()) /sensibilityInDegree); // From 'A' to ','
 //             y = ((roll.toFloat()) / sensibilityInDegree); // From ',' to '*'
 //             setLeftHorizontal(x);
@@ -869,7 +1530,7 @@ void loop() {
 // void integerCommandReceived(int32_t value){
 //     Serial.print("Int:");
 //     Serial.println(value); // Echo the input back to the serial monitor
-    
+
 //     integerToXbox(value);
 //     integerToKeyboard(value);
 //     //uartCommand(m_clr0, m_clr1, m_clr2, m_clr3);
@@ -880,13 +1541,13 @@ void loop() {
 // int m_nextReadAnalogicCount=0;
 // int m_nextReadAnalogicModulo=50;
 
-// float ANALOG_MIN=0; 
+// float ANALOG_MIN=0;
 // float ANALOG_MAX=65535;
 // void loop()
 // {
 
 //   ## NOT TEXT MODE IN THIS VERSION ONLY BYTES IID
-  
+
 //   if (Serial.available() > 0) {
 //     if(m_readingMode== TEXT_INTEGER_MODE){
 //         String input = Serial.readStringUntil('\n'); // Read the input until a newline character
@@ -981,7 +1642,7 @@ void loop() {
 //         gamepad->sendGamepadReport();
 //   }
 //   else{
-        
+
 //         gamepad->releaseDPad();
 //         gamepad->sendGamepadReport();
 //   }
@@ -1023,8 +1684,8 @@ void loop() {
 //         gamepad->setLeftThumb(lx, ly);
 //         gamepad->setRightThumb(rx, ry);
 //         gamepad->sendGamepadReport();
-        
-        
+
+
 //         Serial.print("LX: ");
 //         Serial.print(lx);
 //         Serial.print(" LY: ");
@@ -1033,12 +1694,12 @@ void loop() {
 //         Serial.print(rx);
 //         Serial.print(" RY: ");
 //         Serial.println(ry);
-        
+
 // }
 
 
 // void integerToXbox(int value){
-//   // COMMAND TO SE TRUE OR FALSE BUTTONS OR BUTTON LIKE 
+//   // COMMAND TO SE TRUE OR FALSE BUTTONS OR BUTTON LIKE
 //   if(value>=1000 && value<=2999){
 //         switch(value){
 //             case 1399: randomInputAllGamepadNoMenu(); break;
@@ -1145,9 +1806,9 @@ void loop() {
 //             case 1358: setTriggerLeftPercent(1); break;
 //             case 2358: setTriggerLeftPercent(0); break;
 //             case 1359: setTriggerRightPercent(1); break;
-//             case 2359: setTriggerRightPercent(0); break;   
+//             case 2359: setTriggerRightPercent(0); break;
 //             case 1360: setLeftHorizontal(0.75); break;
-//             case 2360: setLeftHorizontal(0); break; 
+//             case 2360: setLeftHorizontal(0); break;
 //             case 1361: setLeftHorizontal(-0.75); break;
 //             case 2361: setLeftHorizontal(0); break;
 //             case 1362: setLeftVertical(0.75); break;
@@ -1205,11 +1866,11 @@ void loop() {
 //             case 1388: setTriggerLeftPercent(0.25); break;
 //             case 2388: setTriggerLeftPercent(0); break;
 //             case 1389: setTriggerRightPercent(0.25); break;
-//             case 2389: setTriggerRightPercent(0); break;   
+//             case 2389: setTriggerRightPercent(0); break;
 //         }
 //    }
 //    else if(value>=1800000000 && value<=1899999999){
-    
+
 //     //18 50 20 00 10
 //     //1850200010
 //     //4 bytes because integer
@@ -1233,7 +1894,7 @@ void loop() {
 //       value=value-1700000000;
 //       intToBinaryBuffer(value,m_binaryBufferOfInteger,33);
 //       Serial.println(m_binaryBufferOfInteger);
-      
+
 
 //       float triggerLeft=0.0;
 //       float triggerRight=0.0;
@@ -1265,7 +1926,7 @@ void loop() {
 //       if(isIntegerBitRightToLeftTrue(value, 12)) arrowHorizontal+=1; // CLOCK WISE E
 //       if(isIntegerBitRightToLeftTrue(value, 13)) arrowVertical+=-1; // CLOCK WISE S
 //       if(isIntegerBitRightToLeftTrue(value, 14)) arrowHorizontal+=-1; //// CLOCK WISE W
-      
+
 //       if(isIntegerBitRightToLeftTrue(value, 18)) triggerLeft+=(0.25);
 //       if(isIntegerBitRightToLeftTrue(value, 19)) triggerLeft+=(0.25);
 //       if(isIntegerBitRightToLeftTrue(value, 20)) triggerLeft+=(0.5);
@@ -1347,8 +2008,8 @@ void loop() {
 //     }
 //       //1715243245
 //       //11111111 11111111 11111111 11111111
-//       /*   
-//       00 bit 1 0 
+//       /*
+//       00 bit 1 0
 //       byte 11111111  255
 //       signe byte 01111111 -127 127
 //       float integer -1.0 ,1.0
@@ -1357,11 +2018,11 @@ void loop() {
 //       11111111 11011111 65535
 //       11111111 * 20 * 100000000000
 //       2 bytes 2 char
-//       BD BR BU BL  JD JR BTL BTR  ML MC MR AD AR AU AL  
-//       0  0  0  0   0  0  0   0    0  0  0  0  0  0  0   
+//       BD BR BU BL  JD JR BTL BTR  ML MC MR AD AR AU AL
+//       0  0  0  0   0  0  0   0    0  0  0  0  0  0  0
 //       jlv jlh jrv jrh tl tr
 //       9   9   9   9   9  9
-//       */     
+//       */
 //     }
 // }
 
@@ -1380,13 +2041,13 @@ void loop() {
 // //   //01100101010100111111000100000000
 // //   bool inBinaryTag= (binaryTag & (1 << index)) ? true: false;
 // //   bool inValue = (value & (1 << index)) ? true: false;
-  
+
 // //   if(inBinaryTag) return !inValue;
 // //   return inValue;
 // // }
 // bool isIntegerBitRightToLeftTrue(int value, int index){
 //   //Don't forget to remove the tag (like 1700000000)
-//   return (value & (1 << index)) ? true: false;  
+//   return (value & (1 << index)) ? true: false;
 // }
 // void intToBinaryBuffer(int value, char* buffer, size_t size) {
 //     if (size < 32) {
@@ -1437,7 +2098,7 @@ void loop() {
 //         setRightVertical(random(-100,101)/100.0);
 //         setTriggerLeftPercent(random(0,101)/100.0);
 //         setTriggerRightPercent(random(0,101)/100.0);
-        
+
 //         gamepad->sendGamepadReport();
 // }
 // void releaseAllGamepad(){
@@ -1471,7 +2132,7 @@ void loop() {
 //         setTriggerLeftPercent(0);
 //         setTriggerRightPercent(0);
 //         gamepad->sendGamepadReport();
-// }   
+// }
 // void randomAxis(){
 //         setLeftHorizontal(random(-100,101)/100.0);
 //         setLeftVertical(random(-100,101)/100.0);
@@ -1486,5 +2147,5 @@ void loop() {
 
 // /**
 
-       
+
 // */
