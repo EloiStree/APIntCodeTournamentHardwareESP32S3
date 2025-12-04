@@ -209,11 +209,6 @@ public:
         gamepad->sendGamepadReport();
       }
 
-    void release_dpad(){
-      
-              gamepad->releaseDPad();
-              gamepad->sendGamepadReport();
-    }
     void press_dpad(XboxDpadFlags direction , bool isPress){
         if(isPress){
               gamepad->pressDPadDirectionFlag(direction);
@@ -530,8 +525,6 @@ public:
 
   char m_binaryBufferOfInteger[33];
   void parse_integer(int32_t value) {
-
-    if (value>=1800000000 )
 
     if(value>=1000 && value<=2999){
       switch (value) {
