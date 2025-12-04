@@ -13,8 +13,60 @@
 // Optional: if you use debug prints
 // #include "DebugPrintStatic.h"  // Uncomment if you have this
 
+
+class IntAndBinaryUtility{
+
+  public:
+    static constexpr  int binary_tag= 1700000000 ;// 01100101010100111111000100000000
+    
+    static float turn_from_1_to_99_as_percent(int value){
+
+      if(value == 0) return 0.0;
+      // Turn 1 to 99 to -1.0 to 1.0
+      return float((double(value) - 50.0) / 49.0);
+    }
+
+        
+
+    static bool is_integer_bit_right_to_left_true_using_binary_tag(int value, int index){
+      //01100101010100111111000100000000
+      bool in_binary_tag= (binary_tag & (1 << index)) ? true: false;
+      bool in_value = (value & (1 << index)) ? true: false;
+
+      if(in_binary_tag) return !in_value;
+      return in_value;
+    }
+
+    static bool is_integer_bit_right_to_left_true(int value, int index){
+      //Don't forget to remove the tag (like 1700000000)
+      return (value & (1 << index)) ? true: false;
+    }
+
+    static void int_to_binary_buffer(int value, char* buffer, size_t buffer_size) {
+        if (buffer_size < 32) {
+            return; // Ensure buffer is large enough for 32 bits
+        }
+        for (int i = 0; i < 32; i++) {
+            buffer[31 - i] = (value & (1 << i)) ? '1' : '0';
+        }
+        buffer[32] = '\0'; // Null-terminate the string
+    }
+
+    static void int_to_binary_buffer_less(int value, int less_value, char* buffer, size_t buffer_size) {
+        if (buffer_size < 32) {
+            return; // Ensure buffer is large enough for 32 bits
+        }
+        for (int i = 0; i < 32; i++) {
+            bool inverse = (binary_tag & (1 << i));
+            buffer[31 - i] = (value & (1 << i)) ? (inverse ? '0' : '1') : (inverse ? '1' : '0');
+        }
+        buffer[32] = '\0'; // Null-terminate the string
+    }
+};
+
 class GamepadXboxBLE {
 private:
+    //XboxOneSControllerDeviceConfiguration* gamepadConfig  = nullptr;
     XboxSeriesXControllerDeviceConfiguration* gamepadConfig = nullptr;
     XboxGamepadDevice* gamepad = nullptr;
     BleCompositeHID compositeHID;
@@ -25,9 +77,8 @@ private:
     static constexpr int16_t AXIS_MAX_PLUS_ONE = 32768;
     static constexpr int16_t AXIS_NEUTRAL = 0;
 
-    static constexpr uint8_t TRIGGER_MIN = 0;
-    static constexpr uint8_t TRIGGER_MAX = 255;
-    static constexpr uint8_t TRIGGER_MAX_PLUS_ONE = 256;
+    static constexpr int16_t TRIGGER_MIN = 0;
+    static constexpr int16_t TRIGGER_MAX = 65535;
 
 
     int16_t m_left_horizontal = 0.0f;
@@ -54,7 +105,7 @@ private:
 public:
     // Constructor now takes name/device info for flexibility
     GamepadXboxBLE(
-        const char* deviceName = "XInput ESP32",
+        const char* deviceName = "XInput ESP32 APInt",
         const char* manufacturer = "APIntIO",
         uint8_t batteryLevel = 100
     ) : compositeHID(deviceName, manufacturer, batteryLevel) {}
@@ -69,6 +120,8 @@ public:
         Serial.println("[XboxBLE] Initializing BLE Xbox Gamepad...");
 
         // Create configuration
+        
+        //gamepadConfig = new XboxOneSControllerDeviceConfiguration();
         gamepadConfig = new XboxSeriesXControllerDeviceConfiguration();
         if (!gamepadConfig) {
             Serial.println("[ERROR] Failed to allocate gamepad config!");
@@ -147,8 +200,20 @@ public:
       
 
 
-    void set_trigger_left_percent(float percent){ gamepad->setLeftTrigger(percent*TRIGGER_MAX); gamepad->sendGamepadReport(); }
-    void set_trigger_right_percent(float percent){ gamepad->setRightTrigger(percent*TRIGGER_MAX); gamepad->sendGamepadReport();}
+    void set_trigger_left_percent(float percent){ 
+      gamepad->setLeftTrigger(percent*TRIGGER_MAX); 
+      gamepad->sendGamepadReport(); 
+    }
+    void set_trigger_right_percent(float percent){
+       gamepad->setRightTrigger(percent*TRIGGER_MAX);
+        gamepad->sendGamepadReport();
+      }
+
+    void release_dpad(){
+      
+              gamepad->releaseDPad();
+              gamepad->sendGamepadReport();
+    }
     void press_dpad(XboxDpadFlags direction , bool isPress){
         if(isPress){
               gamepad->pressDPadDirectionFlag(direction);
@@ -171,6 +236,7 @@ public:
 
     void set_left_vertical_percent(float percent) {
       if (!gamepad) return;
+      percent*=-1.0;
       int16_t value = (int16_t)(percent * AXIS_MAX);
       // Clamp to valid range
       if (value < AXIS_MIN) value = AXIS_MIN;
@@ -179,7 +245,6 @@ public:
       m_left_vertical = value;
       gamepad->setLeftThumb(m_left_horizontal, m_left_vertical);
       send_report();
-      Serial.println("[Set] Left vertical set to " + String(percent) + "%");
     }
 
     void set_left_horizontal_percent(float percent) {
@@ -192,11 +257,11 @@ public:
       m_left_horizontal = value;
       gamepad->setLeftThumb(m_left_horizontal, m_left_vertical);
       send_report();
-      Serial.println("[Set] Left horizontal set to " + String(percent) + "%");
     }
 
     void set_right_vertical_percent(float percent) {
       if (!gamepad) return;
+      percent*=-1.0;
       int16_t value = (int16_t)(percent * AXIS_MAX);
       // Clamp to valid range
       if (value < AXIS_MIN) value = AXIS_MIN;
@@ -205,7 +270,6 @@ public:
       m_right_vertical = value;
       gamepad->setRightThumb(m_right_horizontal, m_right_vertical);
       send_report();
-      Serial.println("[Set] Right vertical set to " + String(percent) + "%");
     }
 
     void set_right_horizontal_percent(float percent) {
@@ -218,7 +282,6 @@ public:
       m_right_horizontal = value;
       gamepad->setRightThumb(m_right_horizontal, m_right_vertical);
       send_report();
-      Serial.println("[Set] Right horizontal set to " + String(percent) + "%");
     }
 
     // Randomize all axes and triggers
@@ -228,8 +291,8 @@ public:
         int16_t rx = random(AXIS_MIN, AXIS_MAX_PLUS_ONE);
         int16_t ry = random(AXIS_MIN, AXIS_MAX_PLUS_ONE);
 
-        uint8_t lt = random(TRIGGER_MIN, TRIGGER_MAX_PLUS_ONE);
-        uint8_t rt = random(TRIGGER_MIN, TRIGGER_MAX_PLUS_ONE);
+        uint8_t lt = random(TRIGGER_MIN, TRIGGER_MAX);
+        uint8_t rt = random(TRIGGER_MIN, TRIGGER_MAX);
 
         gamepad->setLeftThumb(lx, ly);
         gamepad->setRightThumb(rx, ry);
@@ -237,7 +300,6 @@ public:
         gamepad->setRightTrigger(rt);
 
         send_report();
-        Serial.println("[Random] Axes & triggers randomized");
     }
  
     // Center all sticks, zero triggers
@@ -263,6 +325,84 @@ public:
     // bool isConnected() const {
     //     return compositeHID.isConnected();
     // }
+
+
+    
+
+
+    void random_input_all_gamepad_no_menu(){
+
+            press_a(random(0,2));
+            press_b(random(0,2));
+            press_x(random(0,2));
+            press_y(random(0,2));
+            press_left_side_button(random(0,2));
+            press_right_side_button(random(0,2));
+            press_left_stick(random(0,2));
+            press_right_stick(random(0,2));
+            byte rArrow = random(0,10);
+            switch(rArrow){
+                case 0: press_arrow_n(); break;
+                case 1: press_arrow_ne(); break;
+                case 2: press_arrow_e(); break;
+                case 3: press_arrow_se(); break;
+                case 4: press_arrow_s(); break;
+                case 5: press_arrow_sw(); break;
+                case 6: press_arrow_w(); break;
+                case 7: press_arrow_nw(); break;
+                default: release_dpad(); break;
+            }
+            set_left_horizontal_percent(random(-100,101)/100.0);
+            set_left_vertical_percent(random(-100,101)/100.0);
+            set_right_horizontal_percent(random(-100,101)/100.0);
+            set_right_vertical_percent(random(-100,101)/100.0);
+            set_trigger_left_percent(random(0,101)/100.0);
+            set_trigger_right_percent(random(0,101)/100.0);
+
+            gamepad->sendGamepadReport();
+    }
+    void release_all_gamepad(){
+
+            set_left_horizontal_percent(0);
+            set_left_vertical_percent(0);
+            set_right_horizontal_percent(0);
+            set_right_vertical_percent(0);
+            set_trigger_left_percent(0);
+            set_trigger_right_percent(0);
+            press_a(false);
+            press_b(false);
+            press_x(false);
+            press_y(false);
+            press_left_side_button(false);
+            press_right_side_button(false);
+            press_left_stick(false);
+            press_right_stick(false);
+            press_menu_right(false);
+            press_menu_left(false);
+            press_home_xbox_button(false);
+            release_dpad();
+            gamepad->sendGamepadReport();
+    }
+
+    void release_axis(){
+            set_left_horizontal_percent(0);
+            set_left_vertical_percent(0);
+            set_right_horizontal_percent(0);
+            set_right_vertical_percent(0);
+            set_trigger_left_percent(0);
+            set_trigger_right_percent(0);
+            gamepad->sendGamepadReport();
+    }
+    void random_axis(){
+            set_left_horizontal_percent(random(-100,101)/100.0);
+            set_left_vertical_percent(random(-100,101)/100.0);
+            set_right_horizontal_percent(random(-100,101)/100.0);
+            set_right_vertical_percent(random(-100,101)/100.0);
+            set_trigger_left_percent(random(0,101)/100.0);
+            set_trigger_right_percent(random(0,101)/100.0);
+            gamepad->sendGamepadReport();
+    }
+
 
 private:
     void send_report() {
@@ -388,353 +528,350 @@ public:
   static constexpr int32_t COMMAND_START_RECORDING = 1321;
   static constexpr int32_t COMMAND_STOP_RECORDING = 2321;
 
+  char m_binaryBufferOfInteger[33];
   void parse_integer(int32_t value) {
-    switch (value) {
-      case COMMAND_PRESS_A: gamepad()->press_a(true); break;
-      case COMMAND_RELEASE_A: gamepad()->press_a(false); break;
-      case COMMAND_PRESS_X: gamepad()->press_x(true); break;
-      case COMMAND_RELEASE_X: gamepad()->press_x(false); break;
-      case COMMAND_PRESS_B: gamepad()->press_b(true); break;
-      case COMMAND_RELEASE_B: gamepad()->press_b(false); break;
-      case COMMAND_PRESS_Y: gamepad()->press_y(true); break;
-      case COMMAND_RELEASE_Y: gamepad()->press_y(false); break;
-      
-      case COMMAND_PRESS_LEFT_SIDE_BUTTON: gamepad()->press_left_side_button(true); break;
-      case COMMAND_RELEASE_LEFT_SIDE_BUTTON: gamepad()->press_left_side_button(false); break;
-      case COMMAND_PRESS_RIGHT_SIDE_BUTTON: gamepad()->press_right_side_button(true); break;
-      case COMMAND_RELEASE_RIGHT_SIDE_BUTTON: gamepad()->press_right_side_button(false); break;
-      
-      case COMMAND_PRESS_LEFT_STICK: gamepad()->press_left_stick(true); break;
-      case COMMAND_RELEASE_LEFT_STICK: gamepad()->press_left_stick(false); break;
-      case COMMAND_PRESS_RIGHT_STICK: gamepad()->press_right_stick(true); break;
-      case COMMAND_RELEASE_RIGHT_STICK: gamepad()->press_right_stick(false); break;
-      
-      case COMMAND_PRESS_MENU_RIGHT: gamepad()->press_menu_right(true); break;
-      case COMMAND_RELEASE_MENU_RIGHT: gamepad()->press_menu_right(false); break;
-      case COMMAND_PRESS_MENU_LEFT: gamepad()->press_menu_left(true); break;
-      case COMMAND_RELEASE_MENU_LEFT: gamepad()->press_menu_left(false); break;
+
+    if (value>=1800000000 )
+
+    if(value>=1000 && value<=2999){
+      switch (value) {
+        case COMMAND_PRESS_A: gamepad()->press_a(true); break;
+        case COMMAND_RELEASE_A: gamepad()->press_a(false); break;
+        case COMMAND_PRESS_X: gamepad()->press_x(true); break;
+        case COMMAND_RELEASE_X: gamepad()->press_x(false); break;
+        case COMMAND_PRESS_B: gamepad()->press_b(true); break;
+        case COMMAND_RELEASE_B: gamepad()->press_b(false); break;
+        case COMMAND_PRESS_Y: gamepad()->press_y(true); break;
+        case COMMAND_RELEASE_Y: gamepad()->press_y(false); break;
+        
+        case COMMAND_PRESS_LEFT_SIDE_BUTTON: gamepad()->press_left_side_button(true); break;
+        case COMMAND_RELEASE_LEFT_SIDE_BUTTON: gamepad()->press_left_side_button(false); break;
+        case COMMAND_PRESS_RIGHT_SIDE_BUTTON: gamepad()->press_right_side_button(true); break;
+        case COMMAND_RELEASE_RIGHT_SIDE_BUTTON: gamepad()->press_right_side_button(false); break;
+        
+        case COMMAND_PRESS_LEFT_STICK: gamepad()->press_left_stick(true); break;
+        case COMMAND_RELEASE_LEFT_STICK: gamepad()->press_left_stick(false); break;
+        case COMMAND_PRESS_RIGHT_STICK: gamepad()->press_right_stick(true); break;
+        case COMMAND_RELEASE_RIGHT_STICK: gamepad()->press_right_stick(false); break;
+        
+        case COMMAND_PRESS_MENU_RIGHT: gamepad()->press_menu_right(true); break;
+        case COMMAND_RELEASE_MENU_RIGHT: gamepad()->press_menu_right(false); break;
+        case COMMAND_PRESS_MENU_LEFT: gamepad()->press_menu_left(true); break;
+        case COMMAND_RELEASE_MENU_LEFT: gamepad()->press_menu_left(false); break;
 
 
-      case COMMAND_PRESS_RANDOM_AXIS: gamepad()->set_axis_randomly(); break;
-      case COMMAND_RELEASE_RANDOM_AXIS: gamepad()->set_axis_to_neutral(); break;
-      
-      case 1330: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
-      case 2330: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
-      case 1331: gamepad()->set_left_vertical_percent(1);  gamepad()->set_left_horizontal_percent(0);     break;
-      case 2331: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
-      case 1332: gamepad()->set_left_vertical_percent(1);  gamepad()->set_left_horizontal_percent(1);     break;
-      case 2332: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
-      case 1333: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(1);     break;
-      case 2333: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
-      case 1334: gamepad()->set_left_vertical_percent(-1); gamepad()->set_left_horizontal_percent(1);    break;
-      case 2334: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
-      case 1335: gamepad()->set_left_vertical_percent(-1); gamepad()->set_left_horizontal_percent(0);    break;
-      case 2335: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
-      case 1336: gamepad()->set_left_vertical_percent(-1); gamepad()->set_left_horizontal_percent(-1);   break;
-      case 2336: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
-      case 1337: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(-1);    break;
-      case 2337: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
-      case 1338: gamepad()->set_left_vertical_percent(1);   gamepad()->set_left_horizontal_percent(-1);    break;
-      case 2338: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
-      case 1340: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
-      case 2340: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
-      case 1341: gamepad()->set_right_vertical_percent(1); gamepad()->set_right_horizontal_percent(0);    break;
-      case 2341: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
-      case 1342: gamepad()->set_right_vertical_percent(1); gamepad()->set_right_horizontal_percent(1);    break;
-      case 2342: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
-      case 1343: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(1);    break;
-      case 2343: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
-      case 1344: gamepad()->set_right_vertical_percent(-1); gamepad()->set_right_horizontal_percent(1);   break;
-      case 2344: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
-      case 1345: gamepad()->set_right_vertical_percent(-1); gamepad()->set_right_horizontal_percent(0);   break;
-      case 2345: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
-      case 1346: gamepad()->set_right_vertical_percent(-1); gamepad()->set_right_horizontal_percent(-1);  break;
-      case 2346: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
-      case 1347: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(-1);   break;
-      case 2347: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
-      case 1348: gamepad()->set_right_vertical_percent(1); gamepad()->set_right_horizontal_percent(-1);   break;
-      case 2348: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+        case COMMAND_PRESS_RANDOM_AXIS: gamepad()->set_axis_randomly(); break;
+        case COMMAND_RELEASE_RANDOM_AXIS: gamepad()->set_axis_to_neutral(); break;
+        
+        case 1330: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+        case 2330: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+        case 1331: gamepad()->set_left_vertical_percent(1);  gamepad()->set_left_horizontal_percent(0);     break;
+        case 2331: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+        case 1332: gamepad()->set_left_vertical_percent(1);  gamepad()->set_left_horizontal_percent(1);     break;
+        case 2332: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+        case 1333: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(1);     break;
+        case 2333: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+        case 1334: gamepad()->set_left_vertical_percent(-1); gamepad()->set_left_horizontal_percent(1);    break;
+        case 2334: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+        case 1335: gamepad()->set_left_vertical_percent(-1); gamepad()->set_left_horizontal_percent(0);    break;
+        case 2335: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+        case 1336: gamepad()->set_left_vertical_percent(-1); gamepad()->set_left_horizontal_percent(-1);   break;
+        case 2336: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+        case 1337: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(-1);    break;
+        case 2337: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+        case 1338: gamepad()->set_left_vertical_percent(1);   gamepad()->set_left_horizontal_percent(-1);    break;
+        case 2338: gamepad()->set_left_vertical_percent(0);  gamepad()->set_left_horizontal_percent(0);     break;
+        case 1340: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+        case 2340: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+        case 1341: gamepad()->set_right_vertical_percent(1); gamepad()->set_right_horizontal_percent(0);    break;
+        case 2341: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+        case 1342: gamepad()->set_right_vertical_percent(1); gamepad()->set_right_horizontal_percent(1);    break;
+        case 2342: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+        case 1343: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(1);    break;
+        case 2343: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+        case 1344: gamepad()->set_right_vertical_percent(-1); gamepad()->set_right_horizontal_percent(1);   break;
+        case 2344: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+        case 1345: gamepad()->set_right_vertical_percent(-1); gamepad()->set_right_horizontal_percent(0);   break;
+        case 2345: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+        case 1346: gamepad()->set_right_vertical_percent(-1); gamepad()->set_right_horizontal_percent(-1);  break;
+        case 2346: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+        case 1347: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(-1);   break;
+        case 2347: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
+        case 1348: gamepad()->set_right_vertical_percent(1); gamepad()->set_right_horizontal_percent(-1);   break;
+        case 2348: gamepad()->set_right_vertical_percent(0); gamepad()->set_right_horizontal_percent(0);    break;
 
 
 
 
-      case 1310: gamepad()->release_dpad(); break;
-      case 2310: gamepad()->release_dpad(); break;
-      case 1311: gamepad()->press_arrow_n(); break;
-      case 2311: gamepad()->release_dpad(); break;
-      case 1312: gamepad()->press_arrow_ne(); break;
-      case 2312: gamepad()->release_dpad(); break;
-      case 1313: gamepad()->press_arrow_e(); break;
-      case 2313: gamepad()->release_dpad(); break;
-      case 1314: gamepad()->press_arrow_se(); break;
-      case 2314: gamepad()->release_dpad(); break;
-      case 1315: gamepad()->press_arrow_s(); break;
-      case 2315: gamepad()->release_dpad(); break;
-      case 1316: gamepad()->press_arrow_sw(); break;
-      case 2316: gamepad()->release_dpad(); break;
-      case 1317: gamepad()->press_arrow_w(); break;
-      case 2317: gamepad()->release_dpad(); break;
-      case 1318: gamepad()->press_arrow_nw(); break;
-      case 2318: gamepad()->release_dpad(); break;
-      case 1319: gamepad()->press_home_xbox_button(true); break;
-      case 2319: gamepad()->press_home_xbox_button(false); break;
- 
-      case 1321: gamepad()->record_start(); break;
-      case 2321: gamepad()->record_stop(); break;
+        case 1310: gamepad()->release_dpad(); break;
+        case 2310: gamepad()->release_dpad(); break;
+        case 1311: gamepad()->press_arrow_n(); break;
+        case 2311: gamepad()->release_dpad(); break;
+        case 1312: gamepad()->press_arrow_ne(); break;
+        case 2312: gamepad()->release_dpad(); break;
+        case 1313: gamepad()->press_arrow_e(); break;
+        case 2313: gamepad()->release_dpad(); break;
+        case 1314: gamepad()->press_arrow_se(); break;
+        case 2314: gamepad()->release_dpad(); break;
+        case 1315: gamepad()->press_arrow_s(); break;
+        case 2315: gamepad()->release_dpad(); break;
+        case 1316: gamepad()->press_arrow_sw(); break;
+        case 2316: gamepad()->release_dpad(); break;
+        case 1317: gamepad()->press_arrow_w(); break;
+        case 2317: gamepad()->release_dpad(); break;
+        case 1318: gamepad()->press_arrow_nw(); break;
+        case 2318: gamepad()->release_dpad(); break;
+        case 1319: gamepad()->press_home_xbox_button(true); break;
+        case 2319: gamepad()->press_home_xbox_button(false); break;
+  
+        case 1321: gamepad()->record_start(); break;
+        case 2321: gamepad()->record_stop(); break;
 
-            case 1350: gamepad()->set_left_horizontal_percent(1); break;
-            case 2350: gamepad()->set_left_horizontal_percent(0); break;
-            case 1351: gamepad()->set_left_horizontal_percent(-1); break;
-            case 2351: gamepad()->set_left_horizontal_percent(0); break;
-            case 1352: gamepad()->set_left_vertical_percent(1); break;
-            case 2352: gamepad()->set_left_vertical_percent(0); break;
-            case 1353: gamepad()->set_left_vertical_percent(-1); break;
-            case 2353: gamepad()->set_left_vertical_percent(0); break;
-            case 1354: gamepad()->set_right_horizontal_percent(1); break;
-            case 2354: gamepad()->set_right_horizontal_percent(0); break;
-            case 1355: gamepad()->set_right_horizontal_percent(-1); break;
-            case 2355: gamepad()->set_right_horizontal_percent(0); break;
-            case 1356: gamepad()->set_right_vertical_percent(1); break;
-            case 2356: gamepad()->set_right_vertical_percent(0); break;
-            case 1357: gamepad()->set_right_vertical_percent(-1); break;
-            case 2357: gamepad()->set_right_vertical_percent(0); break;
-            case 1358: gamepad()->set_trigger_left_percent(1); break;
-            case 2358: gamepad()->set_trigger_left_percent(0); break;
-            case 1359: gamepad()->set_trigger_right_percent(1); break;
-            case 2359: gamepad()->set_trigger_right_percent(0); break;
-            case 1360: gamepad()->set_left_horizontal_percent(0.75); break;
-            case 2360: gamepad()->set_left_horizontal_percent(0); break;
-            case 1361: gamepad()->set_left_horizontal_percent(-0.75); break;
-            case 2361: gamepad()->set_left_horizontal_percent(0); break;
-            case 1362: gamepad()->set_left_vertical_percent(0.75); break;
-            case 2362: gamepad()->set_left_vertical_percent(0); break;
-            case 1363: gamepad()->set_left_vertical_percent(-0.75); break;
-            case 2363: gamepad()->set_left_vertical_percent(0); break;
-            case 1364: gamepad()->set_right_horizontal_percent(0.75); break;
-            case 2364: gamepad()->set_right_horizontal_percent(0); break;
-            case 1365: gamepad()->set_right_horizontal_percent(-0.75); break;
-            case 2365: gamepad()->set_right_horizontal_percent(0); break;
-            case 1366: gamepad()->set_right_vertical_percent(0.75); break;
-            case 2366: gamepad()->set_right_vertical_percent(0); break;
-            case 1367: gamepad()->set_right_vertical_percent(-0.75); break;
-            case 2367: gamepad()->set_right_vertical_percent(0); break;
-            case 1368: gamepad()->set_trigger_left_percent(0.75); break;
-            case 2368: gamepad()->set_trigger_left_percent(0); break;
-            case 1369: gamepad()->set_trigger_right_percent(0.75); break;
-            case 2369: gamepad()->set_trigger_right_percent(0); break;
-            case 1370: gamepad()->set_left_horizontal_percent(0.5); break;
-            case 2370: gamepad()->set_left_horizontal_percent(0); break;
-            case 1371: gamepad()->set_left_horizontal_percent(-0.5); break;
-            case 2371: gamepad()->set_left_horizontal_percent(0); break;
-            case 1372: gamepad()->set_left_vertical_percent(0.5); break;
-            case 2372: gamepad()->set_left_vertical_percent(0); break;
-            case 1373: gamepad()->set_left_vertical_percent(-0.5); break;
-            case 2373: gamepad()->set_left_vertical_percent(0); break;
-            case 1374: gamepad()->set_right_horizontal_percent(0.5); break;
-            case 2374: gamepad()->set_right_horizontal_percent(0); break;
-            case 1375: gamepad()->set_right_horizontal_percent(-0.5); break;
-            case 2375: gamepad()->set_right_horizontal_percent(0); break;
-            case 1376: gamepad()->set_right_vertical_percent(0.5); break;
-            case 2376: gamepad()->set_right_vertical_percent(0); break;
-            case 1377: gamepad()->set_right_vertical_percent(-0.5); break;
-            case 2377: gamepad()->set_right_vertical_percent(0); break;
-            case 1378: gamepad()->set_trigger_left_percent(0.5); break;
-            case 2378: gamepad()->set_trigger_left_percent(0); break;
-            case 1379: gamepad()->set_trigger_right_percent(0.5); break;
-            case 2379: gamepad()->set_trigger_right_percent(0); break;
-            case 1380: gamepad()->set_left_horizontal_percent(0.25); break;
-            case 2380: gamepad()->set_left_horizontal_percent(0); break;
-            case 1381: gamepad()->set_left_horizontal_percent(-0.25); break;
-            case 2381: gamepad()->set_left_horizontal_percent(0); break;
-            case 1382: gamepad()->set_left_vertical_percent(0.25); break;
-            case 2382: gamepad()->set_left_vertical_percent(0); break;
-            case 1383: gamepad()->set_left_vertical_percent(-0.25); break;
-            case 2383: gamepad()->set_left_vertical_percent(0); break;
-            case 1384: gamepad()->set_right_horizontal_percent(0.25); break;
-            case 2384: gamepad()->set_right_horizontal_percent(0); break;
-            case 1385: gamepad()->set_right_horizontal_percent(-0.25); break;
-            case 2385: gamepad()->set_right_horizontal_percent(0); break;
-            case 1386: gamepad()->set_right_vertical_percent(0.25); break;
-            case 2386: gamepad()->set_right_vertical_percent(0); break;
-            case 1387: gamepad()->set_right_vertical_percent(-0.25); break;
-            case 2387: gamepad()->set_right_vertical_percent(0); break;
-            case 1388: gamepad()->set_trigger_left_percent(0.25); break;
-            case 2388: gamepad()->set_trigger_left_percent(0); break;
-            case 1389: gamepad()->set_trigger_right_percent(0.25); break;
-            case 2389: gamepad()->set_trigger_right_percent(0); break;
-
-      default:
-        break;
-    }
-
-
-//   if(value>=1000 && value<=2999){
-//         switch(value){
+              case 1350: gamepad()->set_left_horizontal_percent(1); break;
+              case 2350: gamepad()->set_left_horizontal_percent(0); break;
+              case 1351: gamepad()->set_left_horizontal_percent(-1); break;
+              case 2351: gamepad()->set_left_horizontal_percent(0); break;
+              case 1352: gamepad()->set_left_vertical_percent(1); break;
+              case 2352: gamepad()->set_left_vertical_percent(0); break;
+              case 1353: gamepad()->set_left_vertical_percent(-1); break;
+              case 2353: gamepad()->set_left_vertical_percent(0); break;
+              case 1354: gamepad()->set_right_horizontal_percent(1); break;
+              case 2354: gamepad()->set_right_horizontal_percent(0); break;
+              case 1355: gamepad()->set_right_horizontal_percent(-1); break;
+              case 2355: gamepad()->set_right_horizontal_percent(0); break;
+              case 1356: gamepad()->set_right_vertical_percent(1); break;
+              case 2356: gamepad()->set_right_vertical_percent(0); break;
+              case 1357: gamepad()->set_right_vertical_percent(-1); break;
+              case 2357: gamepad()->set_right_vertical_percent(0); break;
+              case 1358: gamepad()->set_trigger_left_percent(1); break;
+              case 2358: gamepad()->set_trigger_left_percent(0); break;
+              case 1359: gamepad()->set_trigger_right_percent(1); break;
+              case 2359: gamepad()->set_trigger_right_percent(0); break;
+              case 1360: gamepad()->set_left_horizontal_percent(0.75); break;
+              case 2360: gamepad()->set_left_horizontal_percent(0); break;
+              case 1361: gamepad()->set_left_horizontal_percent(-0.75); break;
+              case 2361: gamepad()->set_left_horizontal_percent(0); break;
+              case 1362: gamepad()->set_left_vertical_percent(0.75); break;
+              case 2362: gamepad()->set_left_vertical_percent(0); break;
+              case 1363: gamepad()->set_left_vertical_percent(-0.75); break;
+              case 2363: gamepad()->set_left_vertical_percent(0); break;
+              case 1364: gamepad()->set_right_horizontal_percent(0.75); break;
+              case 2364: gamepad()->set_right_horizontal_percent(0); break;
+              case 1365: gamepad()->set_right_horizontal_percent(-0.75); break;
+              case 2365: gamepad()->set_right_horizontal_percent(0); break;
+              case 1366: gamepad()->set_right_vertical_percent(0.75); break;
+              case 2366: gamepad()->set_right_vertical_percent(0); break;
+              case 1367: gamepad()->set_right_vertical_percent(-0.75); break;
+              case 2367: gamepad()->set_right_vertical_percent(0); break;
+              case 1368: gamepad()->set_trigger_left_percent(0.75); break;
+              case 2368: gamepad()->set_trigger_left_percent(0); break;
+              case 1369: gamepad()->set_trigger_right_percent(0.75); break;
+              case 2369: gamepad()->set_trigger_right_percent(0); break;
+              case 1370: gamepad()->set_left_horizontal_percent(0.5); break;
+              case 2370: gamepad()->set_left_horizontal_percent(0); break;
+              case 1371: gamepad()->set_left_horizontal_percent(-0.5); break;
+              case 2371: gamepad()->set_left_horizontal_percent(0); break;
+              case 1372: gamepad()->set_left_vertical_percent(0.5); break;
+              case 2372: gamepad()->set_left_vertical_percent(0); break;
+              case 1373: gamepad()->set_left_vertical_percent(-0.5); break;
+              case 2373: gamepad()->set_left_vertical_percent(0); break;
+              case 1374: gamepad()->set_right_horizontal_percent(0.5); break;
+              case 2374: gamepad()->set_right_horizontal_percent(0); break;
+              case 1375: gamepad()->set_right_horizontal_percent(-0.5); break;
+              case 2375: gamepad()->set_right_horizontal_percent(0); break;
+              case 1376: gamepad()->set_right_vertical_percent(0.5); break;
+              case 2376: gamepad()->set_right_vertical_percent(0); break;
+              case 1377: gamepad()->set_right_vertical_percent(-0.5); break;
+              case 2377: gamepad()->set_right_vertical_percent(0); break;
+              case 1378: gamepad()->set_trigger_left_percent(0.5); break;
+              case 2378: gamepad()->set_trigger_left_percent(0); break;
+              case 1379: gamepad()->set_trigger_right_percent(0.5); break;
+              case 2379: gamepad()->set_trigger_right_percent(0); break;
+              case 1380: gamepad()->set_left_horizontal_percent(0.25); break;
+              case 2380: gamepad()->set_left_horizontal_percent(0); break;
+              case 1381: gamepad()->set_left_horizontal_percent(-0.25); break;
+              case 2381: gamepad()->set_left_horizontal_percent(0); break;
+              case 1382: gamepad()->set_left_vertical_percent(0.25); break;
+              case 2382: gamepad()->set_left_vertical_percent(0); break;
+              case 1383: gamepad()->set_left_vertical_percent(-0.25); break;
+              case 2383: gamepad()->set_left_vertical_percent(0); break;
+              case 1384: gamepad()->set_right_horizontal_percent(0.25); break;
+              case 2384: gamepad()->set_right_horizontal_percent(0); break;
+              case 1385: gamepad()->set_right_horizontal_percent(-0.25); break;
+              case 2385: gamepad()->set_right_horizontal_percent(0); break;
+              case 1386: gamepad()->set_right_vertical_percent(0.25); break;
+              case 2386: gamepad()->set_right_vertical_percent(0); break;
+              case 1387: gamepad()->set_right_vertical_percent(-0.25); break;
+              case 2387: gamepad()->set_right_vertical_percent(0); break;
+              case 1388: gamepad()->set_trigger_left_percent(0.25); break;
+              case 2388: gamepad()->set_trigger_left_percent(0); break;
+              case 1389: gamepad()->set_trigger_right_percent(0.25); break;
+              case 2389: gamepad()->set_trigger_right_percent(0); break;
+              
 //             case 1399: randomInputAllGamepadNoMenu(); break;
 //             case 2399: releaseAllGamepad(); break;
 
+        default:
+          break;
+      }
+    }
+    else if(value>=1800000000 && value<=1899999999){
+
+      //18 50 20 00 10
+      //1850200010
+      //4 bytes because integer
+      int left_horizontal_from_1_to_99 =   (value/1000000)%100;
+      int left_vertical_from_1_to_99 =     (value/10000)%100;
+      int right_horizontal_from_1_to_99 =  (value/100)%100;
+      int right_vertical_from_1_to_99 =    (value/1)%100;
+      float left_horizontal_percent= IntAndBinaryUtility::turn_from_1_to_99_as_percent(left_horizontal_from_1_to_99);
+      float left_vertical_percent= IntAndBinaryUtility::turn_from_1_to_99_as_percent(left_vertical_from_1_to_99);
+      float right_horizontal_percent= IntAndBinaryUtility::turn_from_1_to_99_as_percent(right_horizontal_from_1_to_99);
+      float right_vertical_percent= IntAndBinaryUtility::turn_from_1_to_99_as_percent(right_vertical_from_1_to_99);
+      gamepad()->set_left_horizontal_percent(left_horizontal_percent);
+      gamepad()->set_left_vertical_percent(left_vertical_percent);
+      gamepad()->set_right_horizontal_percent(right_horizontal_percent);
+      gamepad()->set_right_vertical_percent(right_vertical_percent );
+    }
+    else if(value>=1700000000 && value<=1799999999){
+            m_binaryBufferOfInteger[33]; // Buffer to store the binary representation (32 bits + null terminator)
+            //IntAndBinaryUtility::int_to_binary_buffer(value, m_binaryBufferOfInteger, 33);
+            //Serial.println(m_binaryBufferOfInteger);
+            value=value-1700000000;
+            IntAndBinaryUtility::int_to_binary_buffer(value,m_binaryBufferOfInteger,33);
+            //Serial.println(m_binaryBufferOfInteger);
 
 
-//         }
-//    }
-//    else if(value>=1800000000 && value<=1899999999){
+            float triggerLeft=0.0;
+            float triggerRight=0.0;
+            float arrowHorizontal=0;
+            float arrowVertical =0;
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 0))
+            gamepad()->press_a(true);
+            else gamepad()->press_a(false);
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 1)) gamepad()->press_x(true);
+            else gamepad()->press_x(false);
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 2)) gamepad()->press_b(true);
+            else gamepad()->press_b(false);
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 3)) gamepad()->press_y(true);
+            else gamepad()->press_y(false);
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 4)) gamepad()->press_left_side_button(true);
+            else gamepad()->press_left_side_button(false);
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 5)) gamepad()->press_right_side_button(true);
+            else gamepad()->press_right_side_button(false);
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 6)) gamepad()->press_left_stick(true);
+            else gamepad()->press_left_stick(false);
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 7)) gamepad()->press_right_stick(true);
+            else gamepad()->press_right_stick(false);
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 8)) gamepad()->press_menu_left(true);
+            else gamepad()->press_menu_left(false);
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 9)) gamepad()->press_menu_right(true);
+            else gamepad()->press_menu_right(false);
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 10)) gamepad()->press_home_xbox_button(true);
+            else gamepad()->press_home_xbox_button(false);
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 11)) arrowVertical+=1; // CLOCK WISE N
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 12)) arrowHorizontal+=1; // CLOCK WISE E
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 13)) arrowVertical+=-1; // CLOCK WISE S
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 14)) arrowHorizontal+=-1; //// CLOCK WISE W
 
-//     //18 50 20 00 10
-//     //1850200010
-//     //4 bytes because integer
-//     int leftHorizontalfrom1to99 =   (value/1000000)%100;
-//     int leftVerticalfrom1to99 =     (value/10000)%100;
-//     int rightHorizontalfrom1to99 =  (value/100)%100;
-//     int rightVerticalfrom1to99 =    (value/1)%100;
-//     float leftHorizontalPercent= turnFrom1To99AsPercent(leftHorizontalfrom1to99);
-//     float leftVerticalPercent= turnFrom1To99AsPercent(leftVerticalfrom1to99);
-//     float rightHorizontalPercent= turnFrom1To99AsPercent(rightHorizontalfrom1to99);
-//     float rightVerticalPercent= turnFrom1To99AsPercent(rightVerticalfrom1to99);
-//     setLeftHorizontal(leftHorizontalPercent);
-//     setLeftVertical(leftVerticalPercent);
-//     setRightHorizontal(rightHorizontalPercent);
-//     setRightVertical(rightVerticalPercent);
-//    }
-//    else if(value>=1700000000 && value<=1799999999){
-//       m_binaryBufferOfInteger[33]; // Buffer to store the binary representation (32 bits + null terminator)
-//       intToBinaryBuffer(value, m_binaryBufferOfInteger, 33);
-//       Serial.println(m_binaryBufferOfInteger);
-//       value=value-1700000000;
-//       intToBinaryBuffer(value,m_binaryBufferOfInteger,33);
-//       Serial.println(m_binaryBufferOfInteger);
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 18)) triggerLeft+=(0.25);
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 19)) triggerLeft+=(0.25);
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 20)) triggerLeft+=(0.5);
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 21)) triggerRight+=(0.25);
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 22)) triggerRight+=(0.25);
+            if(IntAndBinaryUtility::is_integer_bit_right_to_left_true (value, 23)) triggerRight+=(0.5);
+            gamepad()->set_trigger_left_percent(triggerLeft);
+            gamepad()->set_trigger_right_percent(triggerRight);
 
-
-//       float triggerLeft=0.0;
-//       float triggerRight=0.0;
-//       float arrowHorizontal=0;
-//       float arrowVertical =0;
-//       if(isIntegerBitRightToLeftTrue(value, 0)) pressA(true);
-//       else pressA(false);
-//       if(isIntegerBitRightToLeftTrue(value, 1)) pressX(true);
-//       else pressX(false);
-//       if(isIntegerBitRightToLeftTrue(value, 2)) pressB(true);
-//       else pressB(false);
-//       if(isIntegerBitRightToLeftTrue(value, 3)) pressY(true);
-//       else pressY(false);
-//       if(isIntegerBitRightToLeftTrue(value, 4)) pressLeftSideButton(true);
-//       else pressLeftSideButton(false);
-//       if(isIntegerBitRightToLeftTrue(value, 5)) pressRightSideButton(true);
-//       else pressRightSideButton(false);
-//       if(isIntegerBitRightToLeftTrue(value, 6)) pressLeftStick(true);
-//       else pressLeftStick(false);
-//       if(isIntegerBitRightToLeftTrue(value, 7)) pressRightStick(true);
-//       else pressRightStick(false);
-//       if(isIntegerBitRightToLeftTrue(value, 8)) pressMenuLeft(true);
-//       else pressMenuLeft(false);
-//       if(isIntegerBitRightToLeftTrue(value, 9)) pressMenuRight(true);
-//       else pressMenuRight(false);
-//       if(isIntegerBitRightToLeftTrue(value, 10)) pressHomeXboxButton(true);
-//       else pressHomeXboxButton(false);
-//       if(isIntegerBitRightToLeftTrue(value, 11)) arrowVertical+=1; // CLOCK WISE N
-//       if(isIntegerBitRightToLeftTrue(value, 12)) arrowHorizontal+=1; // CLOCK WISE E
-//       if(isIntegerBitRightToLeftTrue(value, 13)) arrowVertical+=-1; // CLOCK WISE S
-//       if(isIntegerBitRightToLeftTrue(value, 14)) arrowHorizontal+=-1; //// CLOCK WISE W
-
-//       if(isIntegerBitRightToLeftTrue(value, 18)) triggerLeft+=(0.25);
-//       if(isIntegerBitRightToLeftTrue(value, 19)) triggerLeft+=(0.25);
-//       if(isIntegerBitRightToLeftTrue(value, 20)) triggerLeft+=(0.5);
-//       if(isIntegerBitRightToLeftTrue(value, 21)) triggerRight+=(0.25);
-//       if(isIntegerBitRightToLeftTrue(value, 22)) triggerRight+=(0.25);
-//       if(isIntegerBitRightToLeftTrue(value, 23)) triggerRight+=(0.5);
-//       setTriggerLeftPercent(triggerLeft);
-//       setTriggerRightPercent(triggerRight);
-
-//       if(arrowVertical==1 && arrowHorizontal==0)
-//           pressArrowN();
-//       else if(arrowVertical==1 && arrowHorizontal==1)
-//           pressArrowNE();
-//       else if(arrowVertical==0 && arrowHorizontal==1)
-//           pressArrowE();
-//       else if(arrowVertical==-1 && arrowHorizontal==1)
-//           pressArrowSE();
-//       else if(arrowVertical==-1 && arrowHorizontal==0)
-//           pressArrowS();
-//       else if(arrowVertical==-1 && arrowHorizontal==-1)
-//           pressArrowSW();
-//       else if(arrowVertical==0 && arrowHorizontal==-1)
-//           pressArrowW();
-//       else if(arrowVertical==1 && arrowHorizontal==-1)
-//           pressArrowNW();
-//       else
-//           releaseDPad();
-//       bool useDebugPrint = false;
-//     if(useDebugPrint){
-//       Serial.print(" A:");
-//       Serial.print(isIntegerBitRightToLeftTrue(value, 0));
-//       Serial.print(" X:");
-//       Serial.print(isIntegerBitRightToLeftTrue(value, 1));
-//       Serial.print(" B:");
-//       Serial.print(isIntegerBitRightToLeftTrue(value, 2));
-//       Serial.print(" Y:");
-//       Serial.print(isIntegerBitRightToLeftTrue(value, 3));
-//         Serial.print(" LB:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 4));
-//         Serial.print(" RB:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 5));
-//         Serial.print(" LS:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 6));
-//         Serial.print(" RS:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 7));
-//         Serial.print(" MENU:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 8));
-//         Serial.print(" HOME:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 9));
-//         Serial.print(" DPad N:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 10));
-//         Serial.print(" DPad NE:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 11));
-//         Serial.print(" DPad E:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 12));
-//         Serial.print(" DPad SE:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 13));
-//         Serial.print(" DPad S:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 14));
-//         Serial.print(" DPad SW:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 15));
-//         Serial.print(" DPad W:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 16));
-//         Serial.print(" DPad NW:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 17));
-//         Serial.print(" Left Trigger 0.25 1:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 18));
-//         Serial.print(" Left Trigger 0.25 2:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 19));
-//         Serial.print(" Left Trigger 0.5 3 :");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 20));
-//         Serial.print(" Right Trigger 0.25 1:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 21));
-//         Serial.print(" Right Trigger 0.25 2:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 22));
-//         Serial.print(" Right Trigger 0.5 3 :");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 23));
-//         Serial.println();
-//     }
-//       //1715243245
-//       //11111111 11111111 11111111 11111111
-//       /*
-//       00 bit 1 0
-//       byte 11111111  255
-//       signe byte 01111111 -127 127
-//       float integer -1.0 ,1.0
-//       11111111 11111111 11111111 11111111
-//       deux bytes (short)
-//       11111111 11011111 65535
-//       11111111 * 20 * 100000000000
-//       2 bytes 2 char
-//       BD BR BU BL  JD JR BTL BTR  ML MC MR AD AR AU AL
-//       0  0  0  0   0  0  0   0    0  0  0  0  0  0  0
-//       jlv jlh jrv jrh tl tr
-//       9   9   9   9   9  9
-//       */
-//     }
-// }
-
-  }
+            if(arrowVertical==1 && arrowHorizontal==0)
+                 gamepad()->press_arrow_n();
+            else if(arrowVertical==1 && arrowHorizontal==1)
+                gamepad()->press_arrow_ne();
+            else if(arrowVertical==0 && arrowHorizontal==1)
+                gamepad()->press_arrow_e();
+            else if(arrowVertical==-1 && arrowHorizontal==1)
+                gamepad()->press_arrow_se();
+            else if(arrowVertical==-1 && arrowHorizontal==0)
+                gamepad()->press_arrow_s();
+            else if(arrowVertical==-1 && arrowHorizontal==-1)
+                gamepad()->press_arrow_sw();
+            else if(arrowVertical==0 && arrowHorizontal==-1)
+                gamepad()->press_arrow_w();
+            else if(arrowVertical==1 && arrowHorizontal==-1)
+                gamepad()->press_arrow_nw();
+            else
+                gamepad()->release_dpad();
+            bool useDebugPrint = false;
+          // if(useDebugPrint){
+          //   Serial.print(" A:");
+          //   Serial.print(isIntegerBitRightToLeftTrue(value, 0));
+          //   Serial.print(" X:");
+          //   Serial.print(isIntegerBitRightToLeftTrue(value, 1));
+          //   Serial.print(" B:");
+          //   Serial.print(isIntegerBitRightToLeftTrue(value, 2));
+          //   Serial.print(" Y:");
+          //   Serial.print(isIntegerBitRightToLeftTrue(value, 3));
+          //     Serial.print(" LB:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 4));
+          //     Serial.print(" RB:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 5));
+          //     Serial.print(" LS:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 6));
+          //     Serial.print(" RS:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 7));
+          //     Serial.print(" MENU:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 8));
+          //     Serial.print(" HOME:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 9));
+          //     Serial.print(" DPad N:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 10));
+          //     Serial.print(" DPad NE:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 11));
+          //     Serial.print(" DPad E:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 12));
+          //     Serial.print(" DPad SE:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 13));
+          //     Serial.print(" DPad S:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 14));
+          //     Serial.print(" DPad SW:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 15));
+          //     Serial.print(" DPad W:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 16));
+          //     Serial.print(" DPad NW:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 17));
+          //     Serial.print(" Left Trigger 0.25 1:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 18));
+          //     Serial.print(" Left Trigger 0.25 2:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 19));
+          //     Serial.print(" Left Trigger 0.5 3 :");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 20));
+          //     Serial.print(" Right Trigger 0.25 1:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 21));
+          //     Serial.print(" Right Trigger 0.25 2:");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 22));
+          //     Serial.print(" Right Trigger 0.5 3 :");
+          //     Serial.print(isIntegerBitRightToLeftTrue(value, 23));
+          //     Serial.println();
+          // }
+            //1715243245
+            //11111111 11111111 11111111 11111111
+            /*
+            00 bit 1 0
+            byte 11111111  255
+            signe byte 01111111 -127 127
+            float integer -1.0 ,1.0
+            11111111 11111111 11111111 11111111
+            deux bytes (short)
+            11111111 11011111 65535
+            11111111 * 20 * 100000000000
+            2 bytes 2 char
+            BD BR BU BL  JD JR BTL BTR  ML MC MR AD AR AU AL
+            0  0  0  0   0  0  0   0    0  0  0  0  0  0  0
+            jlv jlh jrv jrh tl tr
+            9   9   9   9   9  9
+            */
+          }
+      }
 };
 
 
@@ -1527,153 +1664,7 @@ void loop() {
 // }
 
 
-// void integerCommandReceived(int32_t value){
-//     Serial.print("Int:");
-//     Serial.println(value); // Echo the input back to the serial monitor
 
-//     integerToXbox(value);
-//     integerToKeyboard(value);
-//     //uartCommand(m_clr0, m_clr1, m_clr2, m_clr3);
-// }
-
-// int m_gamepadReportModulo=200;
-// int m_nextReportCount =0;
-// int m_nextReadAnalogicCount=0;
-// int m_nextReadAnalogicModulo=50;
-
-// float ANALOG_MIN=0;
-// float ANALOG_MAX=65535;
-// void loop()
-// {
-
-//   ## NOT TEXT MODE IN THIS VERSION ONLY BYTES IID
-
-//   if (Serial.available() > 0) {
-//     if(m_readingMode== TEXT_INTEGER_MODE){
-//         String input = Serial.readStringUntil('\n'); // Read the input until a newline character
-//         serialReceivedString(input);
-//     }
-//     else{
-//         byte incomingByte = Serial.read();
-//         serialReceivedByte(incomingByte);
-//     }
-//   }
-//   if (Serial2.available() > 0) {
-//     if(m_readingMode== TEXT_INTEGER_MODE){
-//         String input = Serial2.readStringUntil('\n'); // Read the input until a newline character
-//         serialReceivedString(input);
-//         if(m_return_byte_received){
-//             Serial2.write('\n');
-//         }
-//     }
-//     else{
-//         byte incomingByte = Serial2.read();
-//         serialReceivedByte(incomingByte);
-//         if(m_return_byte_received){
-//             Serial2.write(incomingByte);
-//         }
-//     }
-//   }
-//   m_nextReportCount--;
-//   if(m_nextReportCount<0)
-//   {
-//       m_nextReportCount=m_gamepadReportModulo;
-//       gamepad->sendGamepadReport();
-//   }
-
-//   delay(1);
-// }
-
-
-
-// // ################################ GAMEPAD CONTROL ####################################
-// uint16_t C_XBOX_BUTTON_A        = XBOX_BUTTON_A       ;
-// uint16_t C_XBOX_BUTTON_B        = XBOX_BUTTON_B ;
-// uint16_t C_XBOX_BUTTON_X        = XBOX_BUTTON_X ;
-// uint16_t C_XBOX_BUTTON_Y        = XBOX_BUTTON_Y;
-// uint16_t C_XBOX_BUTTON_LB       = XBOX_BUTTON_LB;
-// uint16_t C_XBOX_BUTTON_RB       = XBOX_BUTTON_RB;
-// uint16_t C_XBOX_BUTTON_START    = XBOX_BUTTON_START;
-// uint16_t C_XBOX_BUTTON_SELECT   = XBOX_BUTTON_SELECT;
-// uint16_t C_XBOX_BUTTON_HOME     = XBOX_BUTTON_HOME;
-// uint16_t C_XBOX_BUTTON_LS       = XBOX_BUTTON_LS;
-// uint16_t C_XBOX_BUTTON_RS       = XBOX_BUTTON_RS;
-
-
-
-// void pressA(bool isPress){if(isPress){pressButtonId(C_XBOX_BUTTON_A);}else{releaseButtonId(C_XBOX_BUTTON_A);} BE_SendColorInfo('L',0,1,0); }
-// void pressB(bool isPress){if(isPress){pressButtonId(C_XBOX_BUTTON_B);}else{releaseButtonId(C_XBOX_BUTTON_B);}BE_SendColorInfo('L',1,0,0); }
-// void pressX(bool isPress){if(isPress){pressButtonId(C_XBOX_BUTTON_X);}else{releaseButtonId(C_XBOX_BUTTON_X);}BE_SendColorInfo('L',0,0,1); }
-// void pressY(bool isPress){if(isPress){pressButtonId(C_XBOX_BUTTON_Y);}else{releaseButtonId(C_XBOX_BUTTON_Y);}BE_SendColorInfo('L',1,1,0); }
-// void pressLeftSideButton(bool isPress){if(isPress){pressButtonId(C_XBOX_BUTTON_LB);}else{releaseButtonId(C_XBOX_BUTTON_LB);}}
-// void pressRightSideButton(bool isPress){if(isPress){pressButtonId(C_XBOX_BUTTON_RB);}else{releaseButtonId(C_XBOX_BUTTON_RB);}}
-// void pressLeftStick(bool isPress){if(isPress){pressButtonId(C_XBOX_BUTTON_LS);}else{releaseButtonId(C_XBOX_BUTTON_LS);}}
-// void pressRightStick(bool isPress){if(isPress){pressButtonId(C_XBOX_BUTTON_RS);}else{releaseButtonId(C_XBOX_BUTTON_RS);}}
-// void pressMenuRight(bool isPress){if(isPress){pressButtonId(C_XBOX_BUTTON_START);}else{releaseButtonId(C_XBOX_BUTTON_START);}}
-// void pressMenuLeft(bool isPress){if(isPress){pressButtonId(C_XBOX_BUTTON_SELECT);}else{releaseButtonId(C_XBOX_BUTTON_SELECT);}}
-// void pressHomeXboxButton(bool isPress){if(isPress){pressButtonId(C_XBOX_BUTTON_HOME);}else{releaseButtonId(C_XBOX_BUTTON_HOME);}}
-
-
-// void pressButtonId(uint16_t value){
-//         gamepad->press(value);
-//         gamepad->sendGamepadReport();
-// }
-
-// void releaseButtonId(uint16_t value){
-//         gamepad->release(value);
-//         gamepad->sendGamepadReport();
-// }
-
-// void recordStart(){
-//     gamepad->pressShare();
-//     gamepad->sendGamepadReport();
-// }
-// void recordStop(){
-//     gamepad->releaseShare();
-//     gamepad->sendGamepadReport();
-// }
-// void releaseDPad(){
-//         gamepad->releaseDPad();
-//         gamepad->sendGamepadReport();
-// }
-// void pressDpad(XboxDpadFlags direction , bool isPress){
-//   if(isPress){
-//         gamepad->pressDPadDirectionFlag(direction);
-//         gamepad->sendGamepadReport();
-//   }
-//   else{
-
-//         gamepad->releaseDPad();
-//         gamepad->sendGamepadReport();
-//   }
-// }
-
-
-
-
-
-// float m_left_horizontal=0;
-// float m_left_vertical=0;
-// float m_right_horizontal=0;
-// float m_right_vertical=0;
-// //XBOX_TRIGGER_MIN  XBOX_TRIGGER_MAX XBOX_STICK_MAX
-
-// void setLeftHorizontal(float percent){ m_left_horizontal = percent; update_sticks();}
-// void setLeftVertical(float percent){ m_left_vertical = -percent; update_sticks();}
-// void setRightHorizontal(float percent){ m_right_horizontal = percent; update_sticks();}
-// void setRightVertical(float percent){ m_right_vertical = -percent; update_sticks();}
-
-// void setTriggerLeftPercent(float percent){ gamepad->setLeftTrigger(percent*XBOX_TRIGGER_MAX); gamepad->sendGamepadReport(); BE_SetGaugeChar('L',percent);}
-// void setTriggerRightPercent(float percent){ gamepad->setRightTrigger(percent*XBOX_TRIGGER_MAX); gamepad->sendGamepadReport();BE_SetGaugeChar('R',percent);}
-
-// void pressArrowN(){pressDpad(XboxDpadFlags::NORTH,true);  }
-// void pressArrowE(){pressDpad(XboxDpadFlags::EAST,true); }
-// void pressArrowS(){pressDpad(XboxDpadFlags::SOUTH,true); }
-// void pressArrowW(){pressDpad(XboxDpadFlags::WEST,true); }
-// void pressArrowNE(){pressDpad(XboxDpadFlags((uint8_t)XboxDpadFlags::NORTH | (uint8_t)XboxDpadFlags::EAST),true);}
-// void pressArrowNW(){pressDpad(XboxDpadFlags((uint8_t)XboxDpadFlags::WEST | (uint8_t)XboxDpadFlags::NORTH),true);}
-// void pressArrowSE(){pressDpad(XboxDpadFlags((uint8_t)XboxDpadFlags::EAST | (uint8_t)XboxDpadFlags::SOUTH),true);}
-// void pressArrowSW(){pressDpad(XboxDpadFlags((uint8_t)XboxDpadFlags::SOUTH | (uint8_t)XboxDpadFlags::WEST),true);}
 
 // void update_sticks(){
 
@@ -1698,450 +1689,8 @@ void loop() {
 // }
 
 
-// void integerToXbox(int value){
-//   // COMMAND TO SE TRUE OR FALSE BUTTONS OR BUTTON LIKE
-//   if(value>=1000 && value<=2999){
-//         switch(value){
-//             case 1399: randomInputAllGamepadNoMenu(); break;
-//             case 2399: releaseAllGamepad(); break;
-//             case 1390: m_useHardwareJoystick=true;  Serial.println("Hardware Joystick ON"); break;
-//             case 2390: m_useHardwareJoystick=false;  Serial.println("Hardware Joystick OFF"); break;
-//             case 1300: pressA(true); break;
-//             case 2300: pressA(false); break;
-//             case 1301: pressX(true); break;
-//             case 2301: pressX(false); break;
-//             case 1302: pressB(true); break;
-//             case 2302: pressB(false); break;
-//             case 1303: pressY(true); break;
-//             case 2303: pressY(false); break;
-//             case 1304: pressLeftSideButton(true); break;
-//             case 2304: pressLeftSideButton(false); break;
-//             case 1305: pressRightSideButton(true); break;
-//             case 2305: pressRightSideButton(false); break;
-//             case 1306: pressLeftStick(true); break;
-//             case 2306: pressLeftStick(false); break;
-//             case 1307: pressRightStick(true); break;
-//             case 2307: pressRightStick(false); break;
-//             case 1308: pressMenuRight(true); break;
-//             case 2308: pressMenuRight(false); break;
-//             case 1309: pressMenuLeft(true); break;
-//             case 2309: pressMenuLeft(false); break;
-//             case 1310: releaseDPad(); break;
-//             case 2310: releaseDPad(); break;
-//             case 1311: pressArrowN(); break;
-//             case 2311: releaseDPad(); break;
-//             case 1312: pressArrowNE(); break;
-//             case 2312: releaseDPad(); break;
-//             case 1313: pressArrowE(); break;
-//             case 2313: releaseDPad(); break;
-//             case 1314: pressArrowSE(); break;
-//             case 2314: releaseDPad(); break;
-//             case 1315: pressArrowS(); break;
-//             case 2315: releaseDPad(); break;
-//             case 1316: pressArrowSW(); break;
-//             case 2316: releaseDPad(); break;
-//             case 1317: pressArrowW(); break;
-//             case 2317: releaseDPad(); break;
-//             case 1318: pressArrowNW(); break;
-//             case 2318: releaseDPad(); break;
-//             case 1319: pressHomeXboxButton(true); break;
-//             case 2319: pressHomeXboxButton(false); break;
-//             case 1320: randomAxis(); break;
-//             case 2320: releaseAxis(); break;
-//             case 1321: recordStart(); break;
-//             case 2321: recordStop(); break;
-//             // Turn in clockwise
-//             case 1330: setLeftVertical(0); setLeftHorizontal(0);     break;
-//             case 2330: setLeftVertical(0); setLeftHorizontal(0);     break;
-//             case 1331: setLeftVertical(1); setLeftHorizontal(0);     break;
-//             case 2331: setLeftVertical(0); setLeftHorizontal(0);     break;
-//             case 1332: setLeftVertical(1); setLeftHorizontal(1);     break;
-//             case 2332: setLeftVertical(0); setLeftHorizontal(0);     break;
-//             case 1333: setLeftVertical(0); setLeftHorizontal(1);     break;
-//             case 2333: setLeftVertical(0); setLeftHorizontal(0);     break;
-//             case 1334: setLeftVertical(-1); setLeftHorizontal(1);    break;
-//             case 2334: setLeftVertical(0); setLeftHorizontal(0);     break;
-//             case 1335: setLeftVertical(-1); setLeftHorizontal(0);    break;
-//             case 2335: setLeftVertical(0); setLeftHorizontal(0);     break;
-//             case 1336: setLeftVertical(-1); setLeftHorizontal(-1);   break;
-//             case 2336: setLeftVertical(0); setLeftHorizontal(0);     break;
-//             case 1337: setLeftVertical(0); setLeftHorizontal(-1);    break;
-//             case 2337: setLeftVertical(0); setLeftHorizontal(0);     break;
-//             case 1338: setLeftVertical(1); setLeftHorizontal(-1);    break;
-//             case 2338: setLeftVertical(0); setLeftHorizontal(0);     break;
-//             case 1340: setRightVertical(0); setRightHorizontal(0);    break;
-//             case 2340: setRightVertical(0); setRightHorizontal(0);    break;
-//             case 1341: setRightVertical(1); setRightHorizontal(0);    break;
-//             case 2341: setRightVertical(0); setRightHorizontal(0);    break;
-//             case 1342: setRightVertical(1); setRightHorizontal(1);    break;
-//             case 2342: setRightVertical(0); setRightHorizontal(0);    break;
-//             case 1343: setRightVertical(0); setRightHorizontal(1);    break;
-//             case 2343: setRightVertical(0); setRightHorizontal(0);    break;
-//             case 1344: setRightVertical(-1); setRightHorizontal(1);   break;
-//             case 2344: setRightVertical(0); setRightHorizontal(0);    break;
-//             case 1345: setRightVertical(-1); setRightHorizontal(0);   break;
-//             case 2345: setRightVertical(0); setRightHorizontal(0);    break;
-//             case 1346: setRightVertical(-1); setRightHorizontal(-1);  break;
-//             case 2346: setRightVertical(0); setRightHorizontal(0);    break;
-//             case 1347: setRightVertical(0); setRightHorizontal(-1);   break;
-//             case 2347: setRightVertical(0); setRightHorizontal(0);    break;
-//             case 1348: setRightVertical(1); setRightHorizontal(-1);   break;
-//             case 2348: setRightVertical(0); setRightHorizontal(0);    break;
-//             case 1350: setLeftHorizontal(1); break;
-//             case 2350: setLeftHorizontal(0); break;
-//             case 1351: setLeftHorizontal(-1); break;
-//             case 2351: setLeftHorizontal(0); break;
-//             case 1352: setLeftVertical(1); break;
-//             case 2352: setLeftVertical(0); break;
-//             case 1353: setLeftVertical(-1); break;
-//             case 2353: setLeftVertical(0); break;
-//             case 1354: setRightHorizontal(1); break;
-//             case 2354: setRightHorizontal(0); break;
-//             case 1355: setRightHorizontal(-1); break;
-//             case 2355: setRightHorizontal(0); break;
-//             case 1356: setRightVertical(1); break;
-//             case 2356: setRightVertical(0); break;
-//             case 1357: setRightVertical(-1); break;
-//             case 2357: setRightVertical(0); break;
-//             case 1358: setTriggerLeftPercent(1); break;
-//             case 2358: setTriggerLeftPercent(0); break;
-//             case 1359: setTriggerRightPercent(1); break;
-//             case 2359: setTriggerRightPercent(0); break;
-//             case 1360: setLeftHorizontal(0.75); break;
-//             case 2360: setLeftHorizontal(0); break;
-//             case 1361: setLeftHorizontal(-0.75); break;
-//             case 2361: setLeftHorizontal(0); break;
-//             case 1362: setLeftVertical(0.75); break;
-//             case 2362: setLeftVertical(0); break;
-//             case 1363: setLeftVertical(-0.75); break;
-//             case 2363: setLeftVertical(0); break;
-//             case 1364: setRightHorizontal(0.75); break;
-//             case 2364: setRightHorizontal(0); break;
-//             case 1365: setRightHorizontal(-0.75); break;
-//             case 2365: setRightHorizontal(0); break;
-//             case 1366: setRightVertical(0.75); break;
-//             case 2366: setRightVertical(0); break;
-//             case 1367: setRightVertical(-0.75); break;
-//             case 2367: setRightVertical(0); break;
-//             case 1368: setTriggerLeftPercent(0.75); break;
-//             case 2368: setTriggerLeftPercent(0); break;
-//             case 1369: setTriggerRightPercent(0.75); break;
-//             case 2369: setTriggerRightPercent(0); break;
-//             case 1370: setLeftHorizontal(0.5); break;
-//             case 2370: setLeftHorizontal(0); break;
-//             case 1371: setLeftHorizontal(-0.5); break;
-//             case 2371: setLeftHorizontal(0); break;
-//             case 1372: setLeftVertical(0.5); break;
-//             case 2372: setLeftVertical(0); break;
-//             case 1373: setLeftVertical(-0.5); break;
-//             case 2373: setLeftVertical(0); break;
-//             case 1374: setRightHorizontal(0.5); break;
-//             case 2374: setRightHorizontal(0); break;
-//             case 1375: setRightHorizontal(-0.5); break;
-//             case 2375: setRightHorizontal(0); break;
-//             case 1376: setRightVertical(0.5); break;
-//             case 2376: setRightVertical(0); break;
-//             case 1377: setRightVertical(-0.5); break;
-//             case 2377: setRightVertical(0); break;
-//             case 1378: setTriggerLeftPercent(0.5); break;
-//             case 2378: setTriggerLeftPercent(0); break;
-//             case 1379: setTriggerRightPercent(0.5); break;
-//             case 2379: setTriggerRightPercent(0); break;
-//             case 1380: setLeftHorizontal(0.25); break;
-//             case 2380: setLeftHorizontal(0); break;
-//             case 1381: setLeftHorizontal(-0.25); break;
-//             case 2381: setLeftHorizontal(0); break;
-//             case 1382: setLeftVertical(0.25); break;
-//             case 2382: setLeftVertical(0); break;
-//             case 1383: setLeftVertical(-0.25); break;
-//             case 2383: setLeftVertical(0); break;
-//             case 1384: setRightHorizontal(0.25); break;
-//             case 2384: setRightHorizontal(0); break;
-//             case 1385: setRightHorizontal(-0.25); break;
-//             case 2385: setRightHorizontal(0); break;
-//             case 1386: setRightVertical(0.25); break;
-//             case 2386: setRightVertical(0); break;
-//             case 1387: setRightVertical(-0.25); break;
-//             case 2387: setRightVertical(0); break;
-//             case 1388: setTriggerLeftPercent(0.25); break;
-//             case 2388: setTriggerLeftPercent(0); break;
-//             case 1389: setTriggerRightPercent(0.25); break;
-//             case 2389: setTriggerRightPercent(0); break;
-//         }
-//    }
-//    else if(value>=1800000000 && value<=1899999999){
-
-//     //18 50 20 00 10
-//     //1850200010
-//     //4 bytes because integer
-//     int leftHorizontalfrom1to99 =   (value/1000000)%100;
-//     int leftVerticalfrom1to99 =     (value/10000)%100;
-//     int rightHorizontalfrom1to99 =  (value/100)%100;
-//     int rightVerticalfrom1to99 =    (value/1)%100;
-//     float leftHorizontalPercent= turnFrom1To99AsPercent(leftHorizontalfrom1to99);
-//     float leftVerticalPercent= turnFrom1To99AsPercent(leftVerticalfrom1to99);
-//     float rightHorizontalPercent= turnFrom1To99AsPercent(rightHorizontalfrom1to99);
-//     float rightVerticalPercent= turnFrom1To99AsPercent(rightVerticalfrom1to99);
-//     setLeftHorizontal(leftHorizontalPercent);
-//     setLeftVertical(leftVerticalPercent);
-//     setRightHorizontal(rightHorizontalPercent);
-//     setRightVertical(rightVerticalPercent);
-//    }
-//    else if(value>=1700000000 && value<=1799999999){
-//       m_binaryBufferOfInteger[33]; // Buffer to store the binary representation (32 bits + null terminator)
-//       intToBinaryBuffer(value, m_binaryBufferOfInteger, 33);
-//       Serial.println(m_binaryBufferOfInteger);
-//       value=value-1700000000;
-//       intToBinaryBuffer(value,m_binaryBufferOfInteger,33);
-//       Serial.println(m_binaryBufferOfInteger);
 
 
-//       float triggerLeft=0.0;
-//       float triggerRight=0.0;
-//       float arrowHorizontal=0;
-//       float arrowVertical =0;
-//       if(isIntegerBitRightToLeftTrue(value, 0)) pressA(true);
-//       else pressA(false);
-//       if(isIntegerBitRightToLeftTrue(value, 1)) pressX(true);
-//       else pressX(false);
-//       if(isIntegerBitRightToLeftTrue(value, 2)) pressB(true);
-//       else pressB(false);
-//       if(isIntegerBitRightToLeftTrue(value, 3)) pressY(true);
-//       else pressY(false);
-//       if(isIntegerBitRightToLeftTrue(value, 4)) pressLeftSideButton(true);
-//       else pressLeftSideButton(false);
-//       if(isIntegerBitRightToLeftTrue(value, 5)) pressRightSideButton(true);
-//       else pressRightSideButton(false);
-//       if(isIntegerBitRightToLeftTrue(value, 6)) pressLeftStick(true);
-//       else pressLeftStick(false);
-//       if(isIntegerBitRightToLeftTrue(value, 7)) pressRightStick(true);
-//       else pressRightStick(false);
-//       if(isIntegerBitRightToLeftTrue(value, 8)) pressMenuLeft(true);
-//       else pressMenuLeft(false);
-//       if(isIntegerBitRightToLeftTrue(value, 9)) pressMenuRight(true);
-//       else pressMenuRight(false);
-//       if(isIntegerBitRightToLeftTrue(value, 10)) pressHomeXboxButton(true);
-//       else pressHomeXboxButton(false);
-//       if(isIntegerBitRightToLeftTrue(value, 11)) arrowVertical+=1; // CLOCK WISE N
-//       if(isIntegerBitRightToLeftTrue(value, 12)) arrowHorizontal+=1; // CLOCK WISE E
-//       if(isIntegerBitRightToLeftTrue(value, 13)) arrowVertical+=-1; // CLOCK WISE S
-//       if(isIntegerBitRightToLeftTrue(value, 14)) arrowHorizontal+=-1; //// CLOCK WISE W
-
-//       if(isIntegerBitRightToLeftTrue(value, 18)) triggerLeft+=(0.25);
-//       if(isIntegerBitRightToLeftTrue(value, 19)) triggerLeft+=(0.25);
-//       if(isIntegerBitRightToLeftTrue(value, 20)) triggerLeft+=(0.5);
-//       if(isIntegerBitRightToLeftTrue(value, 21)) triggerRight+=(0.25);
-//       if(isIntegerBitRightToLeftTrue(value, 22)) triggerRight+=(0.25);
-//       if(isIntegerBitRightToLeftTrue(value, 23)) triggerRight+=(0.5);
-//       setTriggerLeftPercent(triggerLeft);
-//       setTriggerRightPercent(triggerRight);
-
-//       if(arrowVertical==1 && arrowHorizontal==0)
-//           pressArrowN();
-//       else if(arrowVertical==1 && arrowHorizontal==1)
-//           pressArrowNE();
-//       else if(arrowVertical==0 && arrowHorizontal==1)
-//           pressArrowE();
-//       else if(arrowVertical==-1 && arrowHorizontal==1)
-//           pressArrowSE();
-//       else if(arrowVertical==-1 && arrowHorizontal==0)
-//           pressArrowS();
-//       else if(arrowVertical==-1 && arrowHorizontal==-1)
-//           pressArrowSW();
-//       else if(arrowVertical==0 && arrowHorizontal==-1)
-//           pressArrowW();
-//       else if(arrowVertical==1 && arrowHorizontal==-1)
-//           pressArrowNW();
-//       else
-//           releaseDPad();
-//       bool useDebugPrint = false;
-//     if(useDebugPrint){
-//       Serial.print(" A:");
-//       Serial.print(isIntegerBitRightToLeftTrue(value, 0));
-//       Serial.print(" X:");
-//       Serial.print(isIntegerBitRightToLeftTrue(value, 1));
-//       Serial.print(" B:");
-//       Serial.print(isIntegerBitRightToLeftTrue(value, 2));
-//       Serial.print(" Y:");
-//       Serial.print(isIntegerBitRightToLeftTrue(value, 3));
-//         Serial.print(" LB:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 4));
-//         Serial.print(" RB:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 5));
-//         Serial.print(" LS:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 6));
-//         Serial.print(" RS:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 7));
-//         Serial.print(" MENU:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 8));
-//         Serial.print(" HOME:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 9));
-//         Serial.print(" DPad N:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 10));
-//         Serial.print(" DPad NE:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 11));
-//         Serial.print(" DPad E:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 12));
-//         Serial.print(" DPad SE:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 13));
-//         Serial.print(" DPad S:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 14));
-//         Serial.print(" DPad SW:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 15));
-//         Serial.print(" DPad W:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 16));
-//         Serial.print(" DPad NW:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 17));
-//         Serial.print(" Left Trigger 0.25 1:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 18));
-//         Serial.print(" Left Trigger 0.25 2:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 19));
-//         Serial.print(" Left Trigger 0.5 3 :");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 20));
-//         Serial.print(" Right Trigger 0.25 1:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 21));
-//         Serial.print(" Right Trigger 0.25 2:");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 22));
-//         Serial.print(" Right Trigger 0.5 3 :");
-//         Serial.print(isIntegerBitRightToLeftTrue(value, 23));
-//         Serial.println();
-//     }
-//       //1715243245
-//       //11111111 11111111 11111111 11111111
-//       /*
-//       00 bit 1 0
-//       byte 11111111  255
-//       signe byte 01111111 -127 127
-//       float integer -1.0 ,1.0
-//       11111111 11111111 11111111 11111111
-//       deux bytes (short)
-//       11111111 11011111 65535
-//       11111111 * 20 * 100000000000
-//       2 bytes 2 char
-//       BD BR BU BL  JD JR BTL BTR  ML MC MR AD AR AU AL
-//       0  0  0  0   0  0  0   0    0  0  0  0  0  0  0
-//       jlv jlh jrv jrh tl tr
-//       9   9   9   9   9  9
-//       */
-//     }
-// }
-
-
-
-// float turnFrom1To99AsPercent(int value){
-
-//     if(value == 0) return 0.0;
-//     // Turn 1 to 99 to -1.0 to 1.0
-//     return float((double(value) - 50.0) / 49.0);
-// }
-
-// int binaryTag= 1700000000 ;// 01100101010100111111000100000000
-
-// // bool isIntegerBitRightToLeftTrueUsingBinaryTag(int value, int index){
-// //   //01100101010100111111000100000000
-// //   bool inBinaryTag= (binaryTag & (1 << index)) ? true: false;
-// //   bool inValue = (value & (1 << index)) ? true: false;
-
-// //   if(inBinaryTag) return !inValue;
-// //   return inValue;
-// // }
-// bool isIntegerBitRightToLeftTrue(int value, int index){
-//   //Don't forget to remove the tag (like 1700000000)
-//   return (value & (1 << index)) ? true: false;
-// }
-// void intToBinaryBuffer(int value, char* buffer, size_t size) {
-//     if (size < 32) {
-//         return; // Ensure buffer is large enough for 32 bits
-//     }
-//     for (int i = 0; i < 32; i++) {
-//         buffer[31 - i] = (value & (1 << i)) ? '1' : '0';
-//     }
-//     buffer[32] = '\0'; // Null-terminate the string
-// }
-// void intToBinaryBufferLess(int value, int lessValue, char* buffer, size_t size) {
-//     if (size < 32) {
-//         return; // Ensure buffer is large enough for 32 bits
-//     }
-//     for (int i = 0; i < 32; i++) {
-//         bool inverse = (binaryTag & (1 << i));
-//         buffer[31 - i] = (value & (1 << i)) ? (inverse ? '0' : '1') : (inverse ? '1' : '0');
-//     }
-//     buffer[32] = '\0'; // Null-terminate the string
-// }
-
-
-// void randomInputAllGamepadNoMenu(){
-
-//         pressA(random(0,2));
-//         pressB(random(0,2));
-//         pressX(random(0,2));
-//         pressY(random(0,2));
-//         pressLeftSideButton(random(0,2));
-//         pressRightSideButton(random(0,2));
-//         pressLeftStick(random(0,2));
-//         pressRightStick(random(0,2));
-//         byte rArrow = random(0,10);
-//         switch(rArrow){
-//             case 0: pressArrowN(); break;
-//             case 1: pressArrowNE(); break;
-//             case 2: pressArrowE(); break;
-//             case 3: pressArrowSE(); break;
-//             case 4: pressArrowS(); break;
-//             case 5: pressArrowSW(); break;
-//             case 6: pressArrowW(); break;
-//             case 7: pressArrowNW(); break;
-//             default: releaseDPad(); break;
-//         }
-//         setLeftHorizontal(random(-100,101)/100.0);
-//         setLeftVertical(random(-100,101)/100.0);
-//         setRightHorizontal(random(-100,101)/100.0);
-//         setRightVertical(random(-100,101)/100.0);
-//         setTriggerLeftPercent(random(0,101)/100.0);
-//         setTriggerRightPercent(random(0,101)/100.0);
-
-//         gamepad->sendGamepadReport();
-// }
-// void releaseAllGamepad(){
-
-//         setLeftHorizontal(0);
-//         setLeftVertical(0);
-//         setRightHorizontal(0);
-//         setRightVertical(0);
-//         setTriggerLeftPercent(0);
-//         setTriggerRightPercent(0);
-//         pressA(false);
-//         pressB(false);
-//         pressX(false);
-//         pressY(false);
-//         pressLeftSideButton(false);
-//         pressRightSideButton(false);
-//         pressLeftStick(false);
-//         pressRightStick(false);
-//         pressMenuRight(false);
-//         pressMenuLeft(false);
-//         pressHomeXboxButton(false);
-//         releaseDPad();
-//         gamepad->sendGamepadReport();
-// }
-
-// void releaseAxis(){
-//         setLeftHorizontal(0);
-//         setLeftVertical(0);
-//         setRightHorizontal(0);
-//         setRightVertical(0);
-//         setTriggerLeftPercent(0);
-//         setTriggerRightPercent(0);
-//         gamepad->sendGamepadReport();
-// }
-// void randomAxis(){
-//         setLeftHorizontal(random(-100,101)/100.0);
-//         setLeftVertical(random(-100,101)/100.0);
-//         setRightHorizontal(random(-100,101)/100.0);
-//         setRightVertical(random(-100,101)/100.0);
-//         setTriggerLeftPercent(random(0,101)/100.0);
-//         setTriggerRightPercent(random(0,101)/100.0);
-//         gamepad->sendGamepadReport();
-// }
 
 
 
